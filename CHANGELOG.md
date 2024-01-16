@@ -1,6 +1,7 @@
-# Changelog
 
-## [Next version]
+This CHANGELOG describes the history of already-released versions. Please see [CHANGELOG_NEXT](./CHANGELOG_NEXT.md) for changes merged into the main branch but not yet released.
+
+# Changelog
 
 ## v0.7.0
 
