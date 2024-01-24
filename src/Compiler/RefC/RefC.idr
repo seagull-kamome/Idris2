@@ -262,20 +262,6 @@ newTemporaryVariableLevel : {auto t : Ref TemporaryVariableTracker (List (List S
 newTemporaryVariableLevel = update TemporaryVariableTracker ([] ::)
 
 
-getNewVar : {auto a : Ref ArgCounter Nat} -> {auto t : Ref TemporaryVariableTracker (List (List String))} -> Core String
-getNewVar = do
-    c <- getNextCounter
-    let var = "tmp_" ++ show c
-    registerVariableForAutomaticFreeing var
-    pure var
-
-
-getNewVarThatWillNotBeFreedAtEndOfBlock : {auto a : Ref ArgCounter Nat} -> Core String
-getNewVarThatWillNotBeFreedAtEndOfBlock = do
-    c <- getNextCounter
-    pure $ "tmp_" ++ show c
-
-
 maxLineLengthForComment : Nat
 maxLineLengthForComment = 60
 
@@ -336,55 +322,16 @@ addHeader : {auto h : Ref HeaderFiles (SortedSet String)}
 addHeader = update HeaderFiles . insert
 
 
-
-makeArglist : {auto a : Ref ArgCounter Nat}
-           -> {auto t : Ref TemporaryVariableTracker (List (List String))}
-           -> {auto oft : Ref OutfileText Output}
-           -> {auto il : Ref IndentLevel Nat}
-           -> Nat
-           -> List AVar
-           -> Core (String)
-makeArglist missing xs = do
-    c <- getNextCounter
-    let arglist = "arglist_" ++ (show c)
-    emit EmptyFC $  "Value_Arglist *"
-                 ++ arglist
-                 ++ " = newArglist(" ++ show missing
-                 ++ "," ++ show (length xs + missing)
-                 ++ ");"
-    pushArgToArglist arglist xs 0
-    pure arglist
-where
-    pushArgToArglist : String
-                    -> List AVar
-                    -> Nat
-                    -> Core ()
-    pushArgToArglist arglist [] k = pure ()
-    pushArgToArglist arglist (arg :: args) k = do
-        emit EmptyFC $ arglist
-                    ++ "->args[" ++ show k ++ "] = "
-                    ++ " newReference(" ++ varName arg ++");"
-        pushArgToArglist arglist args (S k)
-
 fillConstructorArgs : {auto oft : Ref OutfileText Output}
                    -> {auto il : Ref IndentLevel Nat}
                    -> String
                    -> List AVar
-                   -> Nat
+                   -> Bits8
                    -> Core ()
 fillConstructorArgs _ [] _ = pure ()
 fillConstructorArgs cons (v :: vars) k = do
     emit EmptyFC $ cons ++ "->args["++ show k ++ "] = newReference(" ++ varName v ++");"
-    fillConstructorArgs cons vars (S k)
-
-
-showTag : Maybe Int -> String
-showTag Nothing = "-1"
-showTag (Just i) = show i
-
-cArgsVectANF : {0 arity : Nat} -> Vect arity AVar -> Core (Vect arity String)
-cArgsVectANF [] = pure []
-cArgsVectANF (x :: xs) = pure $  (varName x) :: !(cArgsVectANF xs)
+    fillConstructorArgs cons vars (k + 1)
 
 integer_switch : List AConstAlt -> Bool
 integer_switch [] = True
@@ -420,296 +367,189 @@ const2Integer c i =
         _ => i
 
 
-
--- we return for each of the ANF a set of statements and two possible return statements
--- The first one for non-tail statements, the second one for tail statements
--- this way, we can deal with tail calls and tail recursion.
--- The higher-level invocation first executes the normal statements and then
--- assign the return value
-record ReturnStatement where
-    constructor MkRS
-    nonTailCall : String
-    tailCall : String
-
 data TailPositionStatus = InTailPosition | NotInTailPosition
+data AssignTo = NoYetDcl String | AlreadyDcl String
 
-callByPosition : TailPositionStatus -> ReturnStatement -> String
-callByPosition InTailPosition = tailCall
-callByPosition NotInTailPosition = nonTailCall
+assignToName : AssignTo -> String
+assignToName (NoYetDcl x) = x
+assignToName (AlreadyDcl x) = x
 
-mutual
-    copyConstructors : {auto a : Ref ArgCounter Nat}
-                    -> {auto t : Ref TemporaryVariableTracker (List (List String))}
-                    -> {auto oft : Ref OutfileText Output}
-                    -> {auto il : Ref IndentLevel Nat}
-                    -> String
-                    -> List AConAlt
-                    -> String
-                    -> String
-                    -> Nat
-                    -> Core $ ()
-    copyConstructors _ [] _ _ _ = pure ()
-    copyConstructors sc ((MkAConAlt n _ mTag args body) :: xs) constrFieldVar retValVar k = do
-        (tag', name') <- getNameTag mTag n
-        emit EmptyFC $ constrFieldVar ++ "[" ++ show k ++ "].tag = " ++ tag' ++ ";"
-        emit EmptyFC $ constrFieldVar ++ "[" ++ show k ++ "].name = " ++ name' ++ ";"
-        copyConstructors sc xs constrFieldVar retValVar (S k)
-    where
-        getNameTag : {auto a : Ref ArgCounter Nat} -> Maybe Int -> Name -> Core (String, String)
-        getNameTag Nothing n = pure ("-1", "\"" ++ cName n ++ "\"")
-        getNameTag (Just t) _ = pure (show t, "NULL")
-
-
-    conBlocks : {auto a : Ref ArgCounter Nat}
-             -> {auto t : Ref TemporaryVariableTracker (List (List String))}
-             -> {auto oft : Ref OutfileText Output}
-             -> {auto il : Ref IndentLevel Nat}
-             -> (scrutinee:String)
-             -> List AConAlt
-             -> (returnValueVariable:String)
-             -> (nrConBlock:Nat)
-             -> TailPositionStatus
-             -> Core ()
-    conBlocks _ [] _ _ _ = pure ()
-    conBlocks sc ((MkAConAlt n _ mTag args body) :: xs) retValVar k tailStatus = do
-        emit EmptyFC $ "  case " ++ show k ++ ":"
-        emit EmptyFC $ "  {"
-        increaseIndentation
-        newTemporaryVariableLevel
-        varBindLines sc args Z
-        assignment <- cStatementsFromANF body tailStatus
-        emit EmptyFC $ retValVar ++ " = " ++ callByPosition tailStatus assignment ++ ";"
-        freeTmpVars
-        emit EmptyFC $ "break;"
-        decreaseIndentation
-        emit EmptyFC $ "  }"
-        conBlocks sc xs retValVar (S k) tailStatus
-    where
-        varBindLines : String -> (args : List Int) -> Nat -> Core ()
-        varBindLines _ [] _ = pure ()
-        varBindLines sc (target :: xs) source = do
-            emit EmptyFC $  "Value * var_" ++ show target ++ " = ((Value_Constructor*)" ++ sc ++ ")->args[" ++ show source ++ "];"
-            varBindLines sc xs (S source)
-            pure ()
-
-
-    constBlockSwitch : {auto a : Ref ArgCounter Nat}
-                       -> {auto t : Ref TemporaryVariableTracker (List (List String))}
-                       -> {auto oft : Ref OutfileText Output}
-                       -> {auto il : Ref IndentLevel Nat}
-                       -> (alts:List AConstAlt)
-                       -> (retValVar:String)
-                       -> (alternativeIntMatcher:Integer)
-                       -> TailPositionStatus
-                       -> Core ()
-    constBlockSwitch [] _ _ _ = pure ()
-    constBlockSwitch ((MkAConstAlt c' caseBody) :: alts) retValVar i tailStatus = do
-        let c = const2Integer c' i
-        emit EmptyFC $ "  case " ++ show c ++ " :"
-        emit EmptyFC "  {"
-        increaseIndentation
-        newTemporaryVariableLevel
-        assignment <- cStatementsFromANF caseBody tailStatus
-        emit EmptyFC $ retValVar ++ " = " ++ callByPosition tailStatus assignment ++ ";"
-        freeTmpVars
-        emit EmptyFC "break;"
-        decreaseIndentation
-        emit EmptyFC "  }"
-        constBlockSwitch alts retValVar (i+1) tailStatus
+emitAssign : {auto oft : Ref OutfileText Output}
+                -> {auto il : Ref IndentLevel Nat}
+                -> FC -> AssignTo -> String -> Core ()
+emitAssign fc assignto rhs = case assignto of
+      NoYetDcl x   => emit fc "Value *\{x} = \{rhs};"
+      AlreadyDcl x => emit fc "\{x} = \{rhs};"
 
 
 
-    constDefaultBlock : {auto a : Ref ArgCounter Nat}
-                     -> {auto t : Ref TemporaryVariableTracker (List (List String))}
-                     -> {auto oft : Ref OutfileText Output}
-                     -> {auto il : Ref IndentLevel Nat}
-                     -> (def:Maybe ANF)
-                     -> (retValVar:String)
-                     -> TailPositionStatus
-                     -> Core ()
-    constDefaultBlock Nothing _ _ = pure ()
-    constDefaultBlock (Just defaultBody) retValVar tailStatus = do
-        emit EmptyFC "  default :"
-        emit EmptyFC "  {"
-        increaseIndentation
-        newTemporaryVariableLevel
-        assignment <- cStatementsFromANF defaultBody tailStatus
-        emit EmptyFC $ retValVar ++ " = " ++ callByPosition tailStatus assignment ++ ";"
-        freeTmpVars
-        decreaseIndentation
-        emit EmptyFC "  }"
+-- When changing this number, also change idris2_dispatch_closure in runtime.c.
+-- Increasing this number will worsen stack consumption and increase the codesize of idris2_dispatch_closure.
+-- In C89, the maximum number of arguments is 31, so it should not be larger than 31. 127 is safe in C99, but I do not recommend it.
+MaxExtractFunArgs : Nat
+MaxExtractFunArgs = 16
 
 
-
-    makeNonIntSwitchStatementConst :
-                    {auto a : Ref ArgCounter Nat}
-                 -> {auto t : Ref TemporaryVariableTracker (List (List String))}
-                 -> {auto oft : Ref OutfileText Output}
-                 -> {auto il : Ref IndentLevel Nat}
-                 -> List AConstAlt
-                 -> (k:Int)
-                 -> (constantArray:String)
-                 -> (compareFct:String)
-                 -> Core (String, String)
-    makeNonIntSwitchStatementConst [] _ constantArray compareFct  = pure (constantArray, compareFct)
-    makeNonIntSwitchStatementConst ((MkAConstAlt constant caseBody) :: alts) 0 _ _ = do
-        case constant of
-            (Str s) => do
-                c <- getNextCounter
-                let constantArray = "constantArray_" ++ show c
-                emit EmptyFC $ "char **" ++ constantArray ++ " = (char**)malloc(sizeof(char*) * " ++ show (1+(length alts)) ++");"
-                makeNonIntSwitchStatementConst ((MkAConstAlt constant caseBody) :: alts) 1 constantArray "multiStringCompare"
-            (Db d) => do
-                c <- getNextCounter
-                let constantArray = "constantArray_" ++ show c
-                emit EmptyFC $ "double *" ++ constantArray ++ " = (double*)malloc(sizeof(double) * " ++ show (1+(length alts)) ++");"
-                makeNonIntSwitchStatementConst ((MkAConstAlt constant caseBody) :: alts) 1 constantArray "multiDoubleCompare"
-            _ => pure ("ERROR_NOT_DOUBLE_OR_STRING", "ERROR_NOT_DOUBLE_OR_STRING")
-    makeNonIntSwitchStatementConst ((MkAConstAlt constant caseBody) :: alts) k constantArray compareFct = do
-        emit EmptyFC $ constantArray ++ "[" ++ show (k-1) ++ "] = " ++ extractConstant constant ++ ";"
-        makeNonIntSwitchStatementConst alts (k+1) constantArray compareFct
-
-
-    checkTags : List AConAlt -> Core Bool
-    checkTags [] = pure False
-    checkTags ((MkAConAlt n _ Nothing args sc) :: xs) = pure False
-    checkTags _ = pure True
-
-
-    cStatementsFromANF : {auto a : Ref ArgCounter Nat}
+cStatementsFromANF : {auto a : Ref ArgCounter Nat}
                       -> {auto t : Ref TemporaryVariableTracker (List (List String))}
                       -> {auto oft : Ref OutfileText Output}
                       -> {auto il : Ref IndentLevel Nat}
-                      -> ANF
+                      -> ANF -> AssignTo
                       -> TailPositionStatus
-                      -> Core ReturnStatement
-    cStatementsFromANF (AV fc x) _ = do
-        let returnLine = "newReference(" ++ varName x  ++ ")"
-        pure $ MkRS returnLine returnLine
-    cStatementsFromANF (AAppName fc _ n args) _ = do
-        emit fc $ ("// start " ++ cName n ++ "(" ++ showSep ", " (map (\v => varName v) args) ++ ")")
-        arglist <- makeArglist 0 args
-        c <- getNextCounter
-        let f_ptr_name = "fPtr_" ++ show c
-        emit fc $ "Value *(*"++ f_ptr_name ++ ")(Value_Arglist*) = "++  cName n ++ "_arglist;"
-        let closure_name = "closure_" ++ show c
-        emit fc $ "Value *"
-               ++ closure_name
-               ++ " = (Value*)makeClosureFromArglist("
-               ++ f_ptr_name
-               ++ ", "
-               ++ arglist
-               ++ ");"
-        emit fc $ ("// end   " ++ cName n ++ "(" ++ showSep ", " (map (\v => varName v) args) ++ ")")
-        pure $ MkRS ("trampoline(" ++ closure_name ++ ")") closure_name
-    cStatementsFromANF (AUnderApp fc n missing args) _ = do
-        arglist <- makeArglist missing args
-        c <- getNextCounter
-        let f_ptr_name = "closure_" ++ show c
-        let f_ptr = "Value *(*"++ f_ptr_name ++ ")(Value_Arglist*) = "++  cName n ++ "_arglist;"
-        emit fc f_ptr
-        let returnLine = "(Value*)makeClosureFromArglist(" ++ f_ptr_name  ++ ", " ++ arglist ++ ")"
-        pure $ MkRS returnLine returnLine
-    cStatementsFromANF (AApp fc _ closure arg) _ =
-        pure $ MkRS ("apply_closure(" ++ varName closure ++ ", " ++ varName arg ++ ")")
-                    ("tailcall_apply_closure(" ++ varName closure ++ ", " ++ varName arg ++ ")")
-    cStatementsFromANF (ALet fc var value body) tailPosition = do
-        valueAssignment <- cStatementsFromANF value NotInTailPosition
-        emit fc $ "Value * var_" ++ (show var) ++ " = " ++ nonTailCall valueAssignment ++ ";"
-        registerVariableForAutomaticFreeing $ "var_" ++ (show var)
-        bodyAssignment <- cStatementsFromANF body tailPosition
-        pure $ bodyAssignment
-    cStatementsFromANF (ACon fc n UNIT tag []) _ = do
-        pure $ MkRS "(Value*)NULL" "(Value*)NULL"
-    cStatementsFromANF (ACon fc n _ tag args) _ = do
-        c <- getNextCounter
-        let constr = "constructor_" ++ (show c)
-        emit fc $ "Value_Constructor* "
-                ++ constr ++ " = newConstructor("
-                ++ (show (length args))
-                ++ ", "  ++ showTag tag  ++ ", "
-                ++ "\"" ++ cName n ++ "\""
-                ++ ");"
-        emit fc $ " // constructor " ++ cName n
+                      -> Core ()
 
-        fillConstructorArgs constr args 0
-        pure $ MkRS ("(Value*)" ++ constr) ("(Value*)" ++ constr)
-    cStatementsFromANF (AOp fc _ op args) _ = do
-        argsVec <- cArgsVectANF args
-        let opStatement = cOp op argsVec
-        pure $ MkRS opStatement opStatement
-    cStatementsFromANF (AExtPrim fc _ p args) _ = do
-        let prims : List String =
-            ["prim__newIORef", "prim__readIORef", "prim__writeIORef", "prim__newArray",
-             "prim__arrayGet", "prim__arraySet", "prim__getField", "prim__setField",
-             "prim__void", "prim__os", "prim__codegen", "prim__onCollect", "prim__onCollectAny" ]
-        case p of
-            NS _ (UN (Basic pn)) =>
-               unless (elem pn prims) $ throw $ InternalError $ "INTERNAL ERROR: Unknown primitive: " ++ cName p
-            _ => throw $ InternalError $ "INTERNAL ERROR: Unknown primitive: " ++ cName p
-        emit fc $ "// call to external primitive " ++ cName p
-        let returnLine = "idris2_" ++ (cName p) ++ "("++ showSep ", " (map varName args) ++")"
-        pure $ MkRS returnLine returnLine
-    cStatementsFromANF (AConCase fc sc alts mDef) tailPosition = do
-        c <- getNextCounter
-        switchReturnVar <- getNewVarThatWillNotBeFreedAtEndOfBlock
-        let newValueLine = "Value * " ++ switchReturnVar ++ " = NULL;"
-        let constructorField = "constructorField_" ++ show c
-        let constructorFieldLine = "AConAlt * " ++ constructorField
-                                ++ "= newConstructorField(" ++ show (length alts) ++ ");"
-        let switchLine = "switch(compareConstructors("
-                      ++ varName sc
-                      ++ ", "
-                      ++ constructorField
-                      ++ ", "
-                      ++ show (length alts)
-                      ++ ")){"
-        emit fc newValueLine
-        emit fc constructorFieldLine
-        copyConstructors (varName sc) alts constructorField switchReturnVar 0
-        emit fc switchLine
-        conBlocks (varName sc) alts switchReturnVar 0 tailPosition
-        case mDef of
-            Nothing => do
-                emit EmptyFC $ "}"
-                emit EmptyFC $ "free(" ++ constructorField ++ ");"
-                pure $ MkRS switchReturnVar switchReturnVar
-            (Just d) => do
-                emit EmptyFC $ "  default : {"
-                increaseIndentation
-                newTemporaryVariableLevel
-                defaultAssignment <- cStatementsFromANF d tailPosition
-                emit EmptyFC $ switchReturnVar ++ " = " ++ callByPosition tailPosition defaultAssignment ++ ";"
-                freeTmpVars
-                decreaseIndentation
-                emit EmptyFC $ "  }"
-                emit EmptyFC $ "}"
-                emit EmptyFC $ "free(" ++ constructorField ++ ");"
-                pure $ MkRS switchReturnVar switchReturnVar
-    cStatementsFromANF (AConstCase fc sc alts def) tailPosition = do
-        switchReturnVar <- getNewVarThatWillNotBeFreedAtEndOfBlock
-        let newValueLine = "Value * " ++ switchReturnVar ++ " = NULL;"
-        emit fc newValueLine
-        case integer_switch alts of
-            True => do
-                emit fc $ "switch(extractInt(" ++ varName sc ++")){"
-                constBlockSwitch alts switchReturnVar 0 tailPosition
-                constDefaultBlock def switchReturnVar tailPosition
-                emit EmptyFC "}"
-                pure $ MkRS switchReturnVar switchReturnVar
-            False => do
-                (compareField, compareFunction) <- makeNonIntSwitchStatementConst alts 0 "" ""
-                emit fc $ "switch("++ compareFunction ++ "(" ++ varName sc ++ ", " ++ show (length alts) ++ ", " ++ compareField ++ ")){"
-                constBlockSwitch alts switchReturnVar 0 tailPosition
-                constDefaultBlock def switchReturnVar tailPosition
-                emit EmptyFC "}"
-                emit EmptyFC $ "free(" ++ compareField ++ ");"
-                pure $ MkRS switchReturnVar switchReturnVar
-    cStatementsFromANF (APrimVal fc c) _ = pure $ MkRS (cConstant c) (cConstant c)
-    cStatementsFromANF (AErased fc) _ = pure $ MkRS "NULL" "NULL"
-    cStatementsFromANF (ACrash fc x) _ = do
-        emit fc $ "// CRASH"
-        pure $ MkRS "NULL" "NULL"
+concaseBody : {auto a : Ref ArgCounter Nat}
+             -> {auto t : Ref TemporaryVariableTracker (List (List String))}
+             -> {auto oft : Ref OutfileText Output}
+             -> {auto il : Ref IndentLevel Nat}
+             -> String -> String -> List Int -> ANF -> TailPositionStatus
+             -> Core ()
+concaseBody returnvar expr args bdy tailstatus = do
+    increaseIndentation
+    newTemporaryVariableLevel
+    _ <- foldlC (\k, arg => do
+        emit emptyFC "Value *var_\{show arg} = ((Value_Constructor*)\{expr})->args[\{show k}];"
+        pure (S k) ) 0 args
+    cStatementsFromANF bdy (AlreadyDcl returnvar) tailstatus
+    freeTmpVars
+    decreaseIndentation
+
+cStatementsFromANF (AV fc x) lh _ = emitAssign fc lh "newReference(\{varName x})"
+cStatementsFromANF (AAppName fc _ n args) lh tailstatus = do
+    emit fc $ ("// start " ++ cName n ++ "(" ++ showSep ", " (map (\v => varName v) args) ++ ")")
+    let nargs = length args
+    case tailstatus of
+        InTailPosition    => do
+            emitAssign fc lh "makeClosure((Value *(*)())\{cName n}, \{show nargs}, \{show nargs})"
+            fillConstructorArgs "((Value_Constructor*)\{assignToName lh})" args 0
+        NotInTailPosition => do
+            if nargs > MaxExtractFunArgs
+                then do
+                    emitAssign fc lh "NULL"
+                    let lh' = AlreadyDcl $ assignToName lh
+                    emit fc "{"
+                    increaseIndentation
+                    if nargs > 256
+                        then do
+                            emit fc "Value **local_arglist = idris2_malloc(sizeof(Value *) * \{show nargs});"
+                            _ <- foldlC (\i, n => do
+                                    emit fc "local_arglist[\{show i}] = \{varName n};"
+                                    pure (i + 1)) 0 args
+                            emitAssign fc lh' "\{cName n}(local_arglist)"
+                            emit fc "idris2_free(local_arglist);"
+                            emitAssign fc lh' "trampoline(\{assignToName lh})"
+                        else do
+                            emit fc "Value *local_arglist[\{show nargs}];"
+                            _ <- foldlC (\i, n => do
+                                    emit fc "local_arglist[\{show i}] = \{varName n};"
+                                    pure (i + 1)) 0 args
+                            emitAssign fc lh' "trampoline(\{cName n}(local_arglist))"
+                    decreaseIndentation
+                    emit fc "}"
+                else
+                    emitAssign fc lh "trampoline(\{cName n}(\{concat $ intersperse ", " $ map varName args}))"
+
+cStatementsFromANF (AUnderApp fc n missing args) lh _ = do
+    let nargs = length args
+    emitAssign fc lh "makeClosure((Value *(*)())\{cName n}, \{show (nargs + missing)}, \{show nargs})"
+    fillConstructorArgs "((Value_Closure*)\{assignToName lh})" args 0
+
+cStatementsFromANF (AApp fc _ closure arg) lh tailPosition =
+    emitAssign fc lh $ (case tailPosition of
+        NotInTailPosition => "apply_closure("
+        InTailPosition    => "tailcall_apply_closure(") ++ varName closure ++ ", " ++ varName arg ++ ")"
+
+cStatementsFromANF (ALet fc var value body) lh tailPosition = do
+    let var' = "var_\{show var}"
+    cStatementsFromANF value (NoYetDcl var') NotInTailPosition
+    registerVariableForAutomaticFreeing var'
+    cStatementsFromANF body lh tailPosition
+
+cStatementsFromANF (ACon fc n coninfo tag args) lh _ =
+    -- maps a special constructor to NULL.
+    if coninfo == UNIT || coninfo == NIL || coninfo == NOTHING || coninfo == ZERO
+        then emitAssign fc lh "((Value*)NULL /* ACon \{show n} \{show coninfo} */)"
+        else do
+            emitAssign fc lh "newConstructor(\{show $ length args}, \{maybe "0" show tag} /* ACon \{show n} \{show coninfo} */)"
+            let varname = "((Value_Constructor*)\{assignToName lh})"
+            when (coninfo == TYCON) $ emit emptyFC "\{varname}->tyconName = \{cStringQuoted $ show n};"
+            fillConstructorArgs varname args 0
+
+cStatementsFromANF (AOp fc _ op args) lh _ = emitAssign fc lh $ cOp op $ map varName args
+cStatementsFromANF (AExtPrim fc _ p args) lh _ = do
+    let prims : List String =
+        ["prim__newIORef", "prim__readIORef", "prim__writeIORef", "prim__newArray",
+         "prim__arrayGet", "prim__arraySet", "prim__getField", "prim__setField",
+         "prim__void", "prim__os", "prim__codegen", "prim__onCollect", "prim__onCollectAny" ]
+    case p of
+        NS _ (UN (Basic pn)) =>
+           unless (elem pn prims) $ throw $ InternalError $ "INTERNAL ERROR: Unknown primitive: " ++ cName p
+        _ => throw $ InternalError $ "INTERNAL ERROR: Unknown primitive: " ++ cName p
+    emitAssign fc lh "idris2_\{cName p}(\{showSep ", " (map varName args)})"
+
+-- Optimizing some special cases of ConCase
+cStatementsFromANF (AConCase fc sc [] Nothing) _ _ = throw $ InternalError "[refc] AConCase : empty concase"
+cStatementsFromANF (AConCase fc sc [] (Just mDef)) lh tailPosition = cStatementsFromANF mDef lh tailPosition
+cStatementsFromANF (AConCase fc sc alts mDef) lh tailPosition = do
+    let sc' = varName sc
+    emitAssign fc lh "NULL"
+
+    _ <- foldlC (\els, (MkAConAlt name coninfo tag args bdy) => do
+        if (coninfo == NIL || coninfo == NOTHING || coninfo == ZERO || coninfo == UNIT) && null args
+            then emit emptyFC "\{els}if (NULL == \{sc'} /* \{show name} \{show coninfo} */) {"
+            else if coninfo == CONS || coninfo == JUST || coninfo == SUCC
+            then emit emptyFC "\{els}if (NULL != \{sc'} /* \{show name} \{show coninfo} */) {"
+            else if coninfo == TYCON
+            then emit emptyFC "\{els}if (! strcmp(((Value_Constructor*)\{sc'})->tyconName, \{cStringQuoted $ show name})) { "
+            else let Just tag' = tag | _ => throw $ InternalError "[refc] AConCase : MkConAlt has no tag. \{show name} \{show coninfo}"
+                  in emit emptyFC "\{els}if (\{show tag'} == ((Value_Constructor*)\{sc'})->tag /* \{show name} \{show coninfo} */) {"
+        concaseBody (assignToName lh) sc' args bdy tailPosition
+        pure "} else "  ) "" alts
+
+    case mDef of
+        Nothing => pure ()
+        Just body => do
+            emit EmptyFC "} else {"
+            concaseBody (assignToName lh) "" [] body tailPosition
+
+    emit EmptyFC $ "}"
+
+cStatementsFromANF (AConstCase fc sc alts def) lh tailPosition = do
+    let sc' = varName sc
+    emitAssign fc lh "NULL"
+
+    case integer_switch alts of
+        True => do
+            let tmpint = "tmp_\{show !(getNextCounter)}"
+            emit emptyFC "int \{tmpint} = extractInt(\{sc'});"
+            _ <- foldlC (\els, (MkAConstAlt c body) => do
+                    emit emptyFC "\{els}if (\{tmpint} == \{show $ const2Integer c 0}) {"
+                    concaseBody (assignToName lh) "" [] body tailPosition
+                    pure "} else ") "" alts
+            pure ()
+        False => do
+            _ <- foldlC (\els, (MkAConstAlt c body) => do
+                    case c of
+                        Str x => emit emptyFC "\{els}if (! strcmp(\{cStringQuoted x}, ((Value_String*)\{sc'})->str)) {"
+                        Db x  => emit emptyFC "\{els}if (((Value_Double*)\{sc'})->d == \{show x}) {"
+                        x => throw $ InternalError "[refc] AConstCast : unsupported type. \{show fc} \{show x}"
+                    concaseBody (assignToName lh) "" [] body tailPosition
+                    pure "} else ") "" alts
+            pure ()
+
+    case def of
+        Nothing => pure ()
+        Just body => do
+            emit EmptyFC "} else {"
+            concaseBody (assignToName lh) "" [] body tailPosition
+
+    emit EmptyFC $ "}"
+
+cStatementsFromANF (APrimVal fc c) lh _ = emitAssign fc lh $ cConstant c
+cStatementsFromANF (AErased fc)    lh _ = emitAssign fc lh "NULL"
+cStatementsFromANF (ACrash fc x)   lh _ = do
+  emit fc $ "fprintf(stderr, \"[refc] Crash : %s %s¥n\", \{cStringQuoted $ show fc}, \{cStringQuoted x});"
+  emitAssign fc lh "(NULL /* CRASH */)"
 
 
 
@@ -718,18 +558,6 @@ mutual
 addCommaToList : List String -> List String
 addCommaToList [] = []
 addCommaToList (x :: xs) = ("  " ++ x) :: map (", " ++) xs
-
-functionDefSignature : {auto c : Ref Ctxt Defs} -> Name -> (args:List Int) -> Core String
-functionDefSignature n [] = do
-    let fn = (cName !(getFullName n))
-    pure $  "\n\nValue *"  ++ fn ++ "(void)"
-functionDefSignature n args = do
-    let argsStringList = addCommaToList (map (\i =>  "  Value * var_" ++ (show i)) args)
-    let fn = (cName !(getFullName n))
-    pure $  "\n\nValue *"  ++ fn ++ "\n(\n" ++ (showSep "\n" (argsStringList)) ++ "\n)"
-
-functionDefSignatureArglist : {auto c : Ref Ctxt Defs} -> Name  -> Core String
-functionDefSignatureArglist n = pure $  "Value *"  ++ (cName !(getFullName n)) ++ "_arglist(Value_Arglist* arglist)"
 
 
 getArgsNrList : List ty -> Nat -> List Nat
@@ -858,33 +686,26 @@ createCFunctions : {auto c : Ref Ctxt Defs}
                 -> ANFDef
                 -> Core ()
 createCFunctions n (MkAFun args anf) = do
-    fn <- functionDefSignature n args
-    fn' <- functionDefSignatureArglist n
-    update FunctionDefinitions $ \otherDefs => (fn ++ ";\n") :: (fn' ++ ";\n") :: otherDefs
+    let nargs = length args
+    let fn = "Value *\{cName !(getFullName n)}"
+            ++ (if nargs == 0 then "(void)"
+               else if nargs > MaxExtractFunArgs then "(Value *var_arglist[\{show nargs}])"
+               else ("\n(\n" ++ (showSep "\n" $ addCommaToList (map (\i =>  "  Value * var_" ++ (show i)) args))) ++ "\n)")
+    update FunctionDefinitions $ \otherDefs => (fn ++ ";\n") :: otherDefs
     newTemporaryVariableLevel
-    let argsNrs = getArgsNrList args Z
     emit EmptyFC fn
     emit EmptyFC "{"
     increaseIndentation
-    assignment <- cStatementsFromANF anf InTailPosition
-    emit EmptyFC $ "Value *returnValue = " ++ tailCall assignment ++ ";"
+    when (nargs > MaxExtractFunArgs) $ do
+        -- What a strange code, but I believe the C compiler will erase the aliasing.
+        -- Please, don't create a new copy on the stack!
+        _ <- foldlC (\i, j => do
+           emit EmptyFC "Value *var_\{show j} = var_arglist[\{show i}];"
+           pure (i + 1)) 0 args
+        pure ()
+    cStatementsFromANF anf (NoYetDcl "returnValue") InTailPosition
     freeTmpVars
     emit EmptyFC $ "return returnValue;"
-    decreaseIndentation
-    emit EmptyFC  "}\n"
-    emit EmptyFC  ""
-    emit EmptyFC fn'
-    emit EmptyFC "{"
-    increaseIndentation
-    emit EmptyFC $ "return " ++ (cName !(getFullName n))
-    increaseIndentation
-    emit EmptyFC $ "("
-    increaseIndentation
-    let commaSepArglist = addCommaToList (map (\a => "arglist->args["++ show a ++"]") argsNrs)
-    traverse_ (emit EmptyFC) commaSepArglist
-    decreaseIndentation
-    emit EmptyFC ");"
-    decreaseIndentation
     decreaseIndentation
     emit EmptyFC  "}\n"
     emit EmptyFC  ""
@@ -911,25 +732,8 @@ createCFunctions n (MkAForeign ccs fargs ret) = do
                       _ => pure ()
              else emit EmptyFC $ additionalFFIStub fctName fargs ret
           let fnDef = "Value *" ++ (cName n) ++ "(" ++ showSep ", " (replicate (length fargs) "Value *") ++ ");"
-          fn_arglist <- functionDefSignatureArglist n
-          update FunctionDefinitions $ \otherDefs => (fnDef ++ "\n") :: (fn_arglist ++ ";\n") :: otherDefs
+          update FunctionDefinitions $ \otherDefs => (fnDef ++ "\n") :: otherDefs
           typeVarNameArgList <- createFFIArgList fargs
-
-          emit EmptyFC fn_arglist
-          emit EmptyFC "{"
-          increaseIndentation
-          emit EmptyFC $ "return " ++ (cName n)
-          increaseIndentation
-          emit EmptyFC $ "("
-          increaseIndentation
-          let commaSepArglist = addCommaToList (map (\a => "arglist->args["++ show a ++"]") (getArgsNrList fargs Z))
-          traverse_ (emit EmptyFC) commaSepArglist
-          decreaseIndentation
-          emit EmptyFC ");"
-          decreaseIndentation
-          decreaseIndentation
-          emit EmptyFC  "}\n"
-          emit EmptyFC  ""
 
           emitFDef n typeVarNameArgList
           emit EmptyFC "{"

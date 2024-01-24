@@ -28,12 +28,26 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 
 ### Compiler changes
 
+### Backend changes
+
 #### RefC Backend
 
 * Fix invalid memory read onf strSubStr.
 
 * Fix memory leaks of IORef. Now that IORef holds values by itself,
   global_IORef_Storage is no longer needed.
+
+* Supress code generation of _arglist wrappers to reduce code size and compilation time.
+
+* Removed Value_Arglist to reduce Closure's allocation overhead and make code simply.
+
+* Switch calling conventions based on the number of arguments to avoid limits on the number of arguments and to reduce stack usage.
+
+* Omit name field from Value_Constructor. ConstCase and ConstCase now generate simple
+  if-elseif statements instead of using helpers. This reduces malloc costs.
+
+* Mapped some special constructors to NULL. This reduces malloc cost and generates simpler
+  code in ConCase.
 
 #### NodeJS Backend
 
