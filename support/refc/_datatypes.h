@@ -104,10 +104,8 @@ typedef struct {
 typedef struct {
   Value_header header;
   int32_t total;
-  union {
-      int32_t tag;
-      char const *conName;
-  };
+  int32_t tag;
+  char const *conName;
   Value *args[0];
 } Value_Constructor;
 

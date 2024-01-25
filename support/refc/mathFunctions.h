@@ -133,7 +133,7 @@ Value *or_Integer(Value *x, Value *y);
 Value *xor_Integer(Value *x, Value *y);
 
 #define idris2_cmpop(ty, op, l, r)                                             \
-  (idris2_mkBool((idris2_vp_to_##ty(l) op idris2_vp_to_##ty(r)) ? 1 : 0))
+  (idris2_mkBool((idris2_vp_to_##ty(l) op idris2_vp_to_##ty(r))))
 
 /* lt */
 #define lt_Bits8(l, r) (idris2_cmpop(Bits8, <, l, r))

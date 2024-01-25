@@ -9,8 +9,6 @@ void removeReference(Value *source);
 #define IDRIS2_NEW_VALUE(t) ((t *)newValue(sizeof(t)))
 
 Value *newConstructor(int total, int tag);
-
-// copies arglist, no pointer bending
 Value *makeClosure(Value *(*f)(), uint8_t arity, uint8_t filled);
 
 Value *idris2_mkDouble(double d);
@@ -32,7 +30,7 @@ Value *idris2_mkDouble(double d);
   ((sizeof(Value *) == 4)                                                      \
        ? (idris2_mkInt32_Boxed(x))                                             \
        : ((Value *)(((uintptr_t)(x) << idris2_vp_int_shift) + 1)))
-#define idris2_mkBool(x) (idris2_mkInt8(x))
+#define idris2_mkBool(x) (idris2_mkInt8(x ? 1 : 0))
 
 Value *idris2_mkBits32_Boxed(uint32_t i);
 Value *idris2_mkBits64(uint64_t i);
