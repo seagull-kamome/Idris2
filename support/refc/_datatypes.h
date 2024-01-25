@@ -10,17 +10,12 @@
 #include "buffer.h"
 
 #define NO_TAG 0
-#define BITS8_TAG 1
-#define BITS16_TAG 2
 #define BITS32_TAG 3
 #define BITS64_TAG 4
-#define INT8_TAG 5
-#define INT16_TAG 6
 #define INT32_TAG 7
 #define INT64_TAG 8
 #define INTEGER_TAG 9
 #define DOUBLE_TAG 10
-#define CHAR_TAG 11
 #define STRING_TAG 12
 
 #define CLOSURE_TAG 15
@@ -47,15 +42,29 @@ typedef struct {
   // followed by type-specific payload.
 } Value;
 
-typedef struct {
-  Value_header header;
-  uint8_t ui8;
-} Value_Bits8;
+/* expcted at least 4bytes for Value_header alignment. */
+#define idris2_vp_is_unboxed(p) ((uintptr_t)(p)&3)
 
-typedef struct {
-  Value_header header;
-  uint16_t ui16;
-} Value_Bits16;
+#define idris2_vp_int_shift ((sizeof(Value *) == 4) ? 16 : 32)
+#define idris2_vp_to_Bits64(p) (((Value_Bits64 *)(p))->ui64)
+#define idris2_vp_to_Bits32(p)                                                 \
+  ((sizeof(Value *) == 4)                                                      \
+       ? (((Value_Bits32 *)(p))->ui32)                                         \
+       : ((uint32_t)((uintptr_t)(p) >> idris2_vp_int_shift)))
+#define idris2_vp_to_Bits16(p)                                                 \
+  ((uint16_t)((uintptr_t)(p) >> idris2_vp_int_shift))
+#define idris2_vp_to_Bits8(p) ((uint8_t)((uintptr_t)(p) >> idris2_vp_int_shift))
+#define idris2_vp_to_Int64(p) (((Value_Int64 *)(p))->i64)
+#define idris2_vp_to_Int32(p)                                                  \
+  ((sizeof(Value *) == 4)                                                      \
+       ? (((Value_Int32 *)(p))->i32)                                           \
+       : ((int32_t)((uintptr_t)(p) >> idris2_vp_int_shift)))
+#define idris2_vp_to_Int16(p) ((int16_t)((uintptr_t)(p) >> idris2_vp_int_shift))
+#define idris2_vp_to_Int8(p) ((int8_t)((uintptr_t)(p) >> idris2_vp_int_shift))
+#define idris2_vp_to_Char(p)                                                   \
+  ((unsigned char)((uintptr_t)(p) >> idris2_vp_int_shift))
+#define idris2_vp_to_Double(p) (((Value_Double *)(p))->d)
+#define idris2_vp_to_Bool(p) (idris2_vp_to_Int8(p))
 
 typedef struct {
   Value_header header;
@@ -66,16 +75,6 @@ typedef struct {
   Value_header header;
   uint64_t ui64;
 } Value_Bits64;
-
-typedef struct {
-  Value_header header;
-  int8_t i8;
-} Value_Int8;
-
-typedef struct {
-  Value_header header;
-  int16_t i16;
-} Value_Int16;
 
 typedef struct {
   Value_header header;
@@ -99,19 +98,16 @@ typedef struct {
 
 typedef struct {
   Value_header header;
-  unsigned char c;
-} Value_Char;
-
-typedef struct {
-  Value_header header;
   char *str;
 } Value_String;
 
 typedef struct {
   Value_header header;
   int32_t total;
-  int32_t tag;
-  char const *tyconName;
+  union {
+      int32_t tag;
+      char const *conName;
+  };
   Value *args[0];
 } Value_Constructor;
 

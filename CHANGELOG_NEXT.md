@@ -48,6 +48,10 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 
 * Mapped some special constructors to NULL. This reduces malloc cost and generates simpler
   code in ConCase.
+* Unbox Bits32,Bits16,Bits8,Int32,Int16,Int8. These types are now packed into
+  Value*.
+
+* Rename C function to avoid confliction. But only a part.
 
 #### NodeJS Backend
 

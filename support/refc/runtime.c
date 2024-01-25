@@ -137,7 +137,7 @@ Value *tailcall_apply_closure(Value *_clos, Value *arg) {
 }
 
 Value *trampoline(Value *it) {
-  while (it && it->header.tag == CLOSURE_TAG) {
+  while (! idris2_vp_is_unboxed(it) && it && it->header.tag == CLOSURE_TAG) {
     Value_Closure *clos = (Value_Closure *)it;
     if (clos->filled < clos->arity)
       break;
@@ -152,20 +152,15 @@ Value *apply_closure(Value *_clos, Value *arg) {
   return trampoline(tailcall_apply_closure(_clos, arg));
 }
 
-int extractInt(Value *v) {
+int idris2_extractInt(Value *v) {
+  if (idris2_vp_is_unboxed(v))
+    return (int)idris2_vp_to_Int32(v);
+
   switch (v->header.tag) {
-  case BITS8_TAG:
-    return (int)((Value_Bits8 *)v)->ui8;
-  case BITS16_TAG:
-    return (int)((Value_Bits16 *)v)->ui16;
   case BITS32_TAG:
     return (int)((Value_Bits32 *)v)->ui32;
   case BITS64_TAG:
     return (int)((Value_Bits64 *)v)->ui64;
-  case INT8_TAG:
-    return (int)((Value_Int8 *)v)->i8;
-  case INT16_TAG:
-    return (int)((Value_Int16 *)v)->i16;
   case INT32_TAG:
     return (int)((Value_Int32 *)v)->i32;
   case INT64_TAG:
@@ -174,8 +169,6 @@ int extractInt(Value *v) {
     return (int)mpz_get_si(((Value_Integer *)v)->i);
   case DOUBLE_TAG:
     return (int)((Value_Double *)v)->d;
-  case CHAR_TAG:
-    return (int)((Value_Char *)v)->c;
   default:
     return -1;
   }

@@ -1,18 +1,6 @@
 #include "stringOps.h"
 #include "refc_util.h"
 
-Value *stringLength(Value *s) {
-  int length = strlen(((Value_String *)s)->str);
-  return (Value *)makeInt64(length);
-}
-
-Value *head(Value *str) {
-  Value_Char *c = IDRIS2_NEW_VALUE(Value_Char);
-  c->header.tag = CHAR_TAG;
-  c->c = ((Value_String *)str)->str[0];
-  return (Value *)c;
-}
-
 Value *tail(Value *input) {
   Value_String *tailStr = IDRIS2_NEW_VALUE(Value_String);
   tailStr->header.tag = STRING_TAG;
@@ -51,13 +39,13 @@ Value *reverse(Value *str) {
 Value *strIndex(Value *str, Value *i) {
   char *s = ((Value_String *)str)->str;
   int idx = ((Value_Int64 *)i)->i64;
-  return (Value *)makeChar(s[idx]);
+  return (Value *)idris2_mkChar(s[idx]);
 }
 
 Value *strCons(Value *c, Value *str) {
   int l = strlen(((Value_String *)str)->str);
-  Value_String *retVal = makeEmptyString(l + 2);
-  retVal->str[0] = ((Value_Char *)c)->c;
+  Value_String *retVal = idris2_mkEmptyString(l + 2);
+  retVal->str[0] = idris2_vp_to_Char(c);
   memcpy(retVal->str + 1, ((Value_String *)str)->str, l);
   return (Value *)retVal;
 }
@@ -65,7 +53,7 @@ Value *strCons(Value *c, Value *str) {
 Value *strAppend(Value *a, Value *b) {
   int la = strlen(((Value_String *)a)->str);
   int lb = strlen(((Value_String *)b)->str);
-  Value_String *retVal = makeEmptyString(la + lb + 1);
+  Value_String *retVal = idris2_mkEmptyString(la + lb + 1);
   memcpy(retVal->str, ((Value_String *)a)->str, la);
   memcpy(retVal->str + la, ((Value_String *)b)->str, lb);
   return (Value *)retVal;
@@ -73,15 +61,15 @@ Value *strAppend(Value *a, Value *b) {
 
 Value *strSubstr(Value *start, Value *len, Value *s) {
   char *input = ((Value_String *)s)->str;
-  int offset = extractInt(start); /* start and len is Nat. */
-  int l = extractInt(len);
+  int offset = idris2_extractInt(start); /* start and len is Nat. */
+  int l = idris2_extractInt(len);
 
   int tailLen = strlen(input) - offset;
   if (tailLen < l) {
     l = tailLen;
   }
 
-  Value_String *retVal = makeEmptyString(l + 1);
+  Value_String *retVal = idris2_mkEmptyString(l + 1);
   memcpy(retVal->str, input + offset, l);
 
   return (Value *)retVal;
@@ -103,7 +91,7 @@ char *fastPack(Value *charList) {
   int i = 0;
   current = (Value_Constructor *)charList;
   while (current != NULL) {
-    retVal[i++] = ((Value_Char *)current->args[0])->c;
+    retVal[i++] = idris2_vp_to_Char(current->args[0]);
     current = (Value_Constructor *)current->args[1];
   }
 
@@ -115,14 +103,14 @@ Value *fastUnpack(char *str) {
     return (Value *)NULL;
 
   Value_Constructor *retVal = (Value_Constructor *)newConstructor(2, 0);
-  retVal->args[0] = (Value *)makeChar(str[0]);
+  retVal->args[0] = (Value *)idris2_mkChar(str[0]);
 
   int i = 1;
   Value_Constructor *current = (Value_Constructor *)retVal;
   Value_Constructor *next;
   while (str[i] != '\0') {
     next = (Value_Constructor *)newConstructor(2, 0);
-    next->args[0] = (Value *)makeChar(str[i]);
+    next->args[0] = (Value *)idris2_mkChar(str[i]);
     current->args[1] = (Value *)next;
 
     i++;
@@ -177,7 +165,8 @@ Value *stringIteratorNew(char *str) {
   memcpy(it->str, str, l + 1); // Take a copy of str, in case it gets GCed
 
   return (Value *)makeGCPointer(
-      it, (Value_Closure *)makeClosure((Value * (*)()) onCollectStringIterator, 2, 0));
+      it, (Value_Closure *)makeClosure((Value * (*)()) onCollectStringIterator,
+                                       2, 0));
 }
 
 Value *onCollectStringIterator(Value_Pointer *ptr, void *null) {
@@ -190,7 +179,7 @@ Value *onCollectStringIterator(Value_Pointer *ptr, void *null) {
 Value *stringIteratorToString(void *a, char *str, Value *it_p,
                               Value_Closure *f) {
   String_Iterator *it = ((Value_GCPointer *)it_p)->p->p;
-  return apply_closure((Value *)f, (Value *)makeString(it->str + it->pos));
+  return apply_closure((Value *)f, (Value *)idris2_mkString(it->str + it->pos));
 }
 
 Value *stringIteratorNext(char *s, Value *it_p) {
@@ -203,7 +192,7 @@ Value *stringIteratorNext(char *s, Value *it_p) {
   it->pos++; // Ok to do this as StringIterator linear
 
   Value_Constructor *retVal = (Value_Constructor *)newConstructor(2, 0);
-  retVal->args[0] = (Value *)makeChar(c);
+  retVal->args[0] = (Value *)idris2_mkChar(c);
   retVal->args[1] = newReference(it_p);
 
   return (Value *)retVal;

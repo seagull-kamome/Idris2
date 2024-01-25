@@ -29,7 +29,7 @@ static Value *osstring = NULL;
 
 Value *idris2_System_Info_prim__os(void) {
   if (osstring == NULL) {
-    osstring = (Value *)makeString(
+    osstring = (Value *)idris2_mkString(
 #ifdef _WIN32
         "windows"
 #elif _WIN64
@@ -63,7 +63,7 @@ static Value *codegenstring = NULL;
 
 Value *idris2_System_Info_prim__codegen(void) {
   if (codegenstring == NULL)
-    codegenstring = (Value *)makeString("refc");
+    codegenstring = (Value *)idris2_mkString("refc");
   return newReference(codegenstring);
 }
 
@@ -82,7 +82,7 @@ Value *idris2_crash(Value *msg) {
 
 Value *idris2_Data_IOArray_Prims_prim__newArray(Value *erased, Value *_length,
                                                 Value *v, Value *_word) {
-  int length = extractInt(_length);
+  int length = idris2_vp_to_Int64(_length); // it sould Int32
   Value_Array *a = makeArray(length);
 
   for (int i = 0; i < length; i++) {
