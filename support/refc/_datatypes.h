@@ -105,7 +105,7 @@ typedef struct {
   Value_header header;
   int32_t total;
   int32_t tag;
-  char const *conName;
+  char const *name;
   Value *args[0];
 } Value_Constructor;
 
