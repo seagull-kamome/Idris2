@@ -35,6 +35,10 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 * Fix memory leaks of IORef. Now that IORef holds values by itself,
   global_IORef_Storage is no longer needed.
 
+* Added len field to Value_String.
+
+* Fix memory leaks of fastPack/fastUnpack/fastConcat.
+
 #### NodeJS Backend
 
 * The NodeJS executable output to `build/exec/` now has its executable bit set.

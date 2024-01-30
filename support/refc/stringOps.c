@@ -1,93 +1,68 @@
 #include "stringOps.h"
 #include "refc_util.h"
 
-Value *stringLength(Value *s) {
-  int length = strlen(((Value_String *)s)->str);
-  return (Value *)makeInt64(length);
+Value *idris2_stringTail(Value *_s) {
+  Value_String const *const s = (Value_String const *)_s;
+  if (s->len == 0)
+    return newReference(_s);
+
+  return (Value *)idris2_makeString(s->len - 1, s->str + 1);
 }
 
-Value *head(Value *str) {
-  Value_Char *c = IDRIS2_NEW_VALUE(Value_Char);
-  c->header.tag = CHAR_TAG;
-  c->c = ((Value_String *)str)->str[0];
-  return (Value *)c;
-}
+Value *idris2_stringReverse(Value *_s) {
+  Value_String const *src = (Value_String const *)_s;
+  int n = src->len;
+  Value_String *dst = idris2_makeEmptyString(n);
 
-Value *tail(Value *input) {
-  Value_String *tailStr = IDRIS2_NEW_VALUE(Value_String);
-  tailStr->header.tag = STRING_TAG;
-  Value_String *s = (Value_String *)input;
-  int l = strlen(s->str);
-  if (l != 0) {
-    tailStr->str = malloc(l);
-    IDRIS2_REFC_VERIFY(tailStr->str, "malloc failed");
-    memset(tailStr->str, 0, l);
-    memcpy(tailStr->str, s->str + 1, l - 1);
-    return (Value *)tailStr;
-  } else {
-    tailStr->str = malloc(1);
-    IDRIS2_REFC_VERIFY(tailStr->str, "malloc failed");
-    tailStr->str[0] = '\0';
-    return (Value *)tailStr;
-  }
-}
-
-Value *reverse(Value *str) {
-  Value_String *retVal = IDRIS2_NEW_VALUE(Value_String);
-  retVal->header.tag = STRING_TAG;
-  Value_String *input = (Value_String *)str;
-  int l = strlen(input->str);
-  retVal->str = malloc(l + 1);
-  IDRIS2_REFC_VERIFY(retVal->str, "malloc failed");
-  memset(retVal->str, 0, l + 1);
-  char *p = retVal->str;
-  char *q = input->str + (l - 1);
-  for (int i = 0; i < l; i++) {
+  char *p = dst->str;
+  char const *q = src->str + n;
+  while (n--)
     *p++ = *q--;
-  }
+
+  return (Value *)dst;
+}
+
+Value *idris2_stringCons(Value *c, Value *_s) {
+  Value_String const *s = (Value_String const *)_s;
+  Value_String *r = idris2_makeEmptyString(s->len + 1);
+  r->str[0] = ((Value_Char const *)c)->c;
+  memcpy(r->str + 1, s->str, s->len);
+  return (Value *)r;
+}
+
+Value *idris2_stringAppend(Value *a, Value *b) {
+  Value_String const *stra = (Value_String const *)a;
+  Value_String const *strb = (Value_String const *)b;
+
+  if (stra->len == 0)
+    return newReference(b);
+  if (strb->len == 0)
+    return newReference(a);
+
+  Value_String *retVal = idris2_makeEmptyString(stra->len + strb->len);
+  memcpy(retVal->str, ((Value_String *)a)->str, stra->len);
+  memcpy(retVal->str + stra->len, ((Value_String *)b)->str, strb->len);
+
   return (Value *)retVal;
 }
 
-Value *strIndex(Value *str, Value *i) {
-  char *s = ((Value_String *)str)->str;
-  int idx = ((Value_Int64 *)i)->i64;
-  return (Value *)makeChar(s[idx]);
-}
-
-Value *strCons(Value *c, Value *str) {
-  int l = strlen(((Value_String *)str)->str);
-  Value_String *retVal = makeEmptyString(l + 2);
-  retVal->str[0] = ((Value_Char *)c)->c;
-  memcpy(retVal->str + 1, ((Value_String *)str)->str, l);
-  return (Value *)retVal;
-}
-
-Value *strAppend(Value *a, Value *b) {
-  int la = strlen(((Value_String *)a)->str);
-  int lb = strlen(((Value_String *)b)->str);
-  Value_String *retVal = makeEmptyString(la + lb + 1);
-  memcpy(retVal->str, ((Value_String *)a)->str, la);
-  memcpy(retVal->str + la, ((Value_String *)b)->str, lb);
-  return (Value *)retVal;
-}
-
-Value *strSubstr(Value *start, Value *len, Value *s) {
-  char *input = ((Value_String *)s)->str;
+Value *idris2_stringSubstr(Value *start, Value *len, Value *s) {
+  Value_String const *input = (Value_String *)s;
   int offset = extractInt(start); /* start and len is Nat. */
   int l = extractInt(len);
 
-  int tailLen = strlen(input) - offset;
+  int tailLen = input->len - offset;
   if (tailLen < l) {
     l = tailLen;
   }
 
-  Value_String *retVal = makeEmptyString(l + 1);
-  memcpy(retVal->str, input + offset, l);
+  Value_String *retVal = idris2_makeEmptyString(l);
+  memcpy(retVal->str, input->str + offset, l);
 
   return (Value *)retVal;
 }
 
-char *fastPack(Value *charList) {
+Value *idris2_stringFastPack(Value *charList) {
   Value_Constructor *current;
 
   int l = 0;
@@ -97,34 +72,34 @@ char *fastPack(Value *charList) {
     current = (Value_Constructor *)current->args[1];
   }
 
-  char *retVal = malloc(l + 1);
-  retVal[l] = 0;
+  Value_String *retVal = idris2_makeEmptyString(l);
+  char *p = retVal->str;
 
-  int i = 0;
   current = (Value_Constructor *)charList;
   while (current->total == 2) {
-    retVal[i++] = ((Value_Char *)current->args[0])->c;
+    *p++ = ((Value_Char *)current->args[0])->c;
     current = (Value_Constructor *)current->args[1];
   }
 
-  return retVal;
+  return (Value *)retVal;
 }
 
-Value *fastUnpack(char *str) {
-  if (str[0] == '\0') {
+Value *idris2_stringFastUnpack(Value *str) {
+  Value_String const *src = (Value_String const *)str;
+  if (src->len == 0) {
     return (Value *)newConstructor(0, 0, "Prelude_Types_Nil");
   }
 
   Value_Constructor *retVal =
       newConstructor(2, 1, "Prelude_Types__colon_colon");
-  retVal->args[0] = (Value *)makeChar(str[0]);
+  retVal->args[0] = (Value *)makeChar(src->str[0]);
 
   int i = 1;
   Value_Constructor *current = retVal;
   Value_Constructor *next;
-  while (str[i] != '\0') {
+  while (src->len > i) {
     next = newConstructor(2, 1, "Prelude_Types__colon_colon");
-    next->args[0] = (Value *)makeChar(str[i]);
+    next->args[0] = (Value *)makeChar(src->str[i]);
     current->args[1] = (Value *)next;
 
     i++;
@@ -135,7 +110,7 @@ Value *fastUnpack(char *str) {
   return (Value *)retVal;
 }
 
-char *fastConcat(Value *strList) {
+Value *idris2_stringFastConcat(Value *strList) {
   Value_Constructor *current;
 
   int totalLength = 0;
@@ -145,23 +120,19 @@ char *fastConcat(Value *strList) {
     current = (Value_Constructor *)current->args[1];
   }
 
-  char *retVal = malloc(totalLength + 1);
-  retVal[totalLength] = '\0';
+  Value_String *retVal = idris2_makeEmptyString(totalLength);
 
-  char *currentStr;
-  int currentStrLen;
   int offset = 0;
   current = (Value_Constructor *)strList;
   while (current->total == 2) {
-    currentStr = ((Value_String *)current->args[0])->str;
-    currentStrLen = strlen(currentStr);
-    memcpy(retVal + offset, currentStr, currentStrLen);
+    Value_String *currentStr = (Value_String *)current->args[0];
+    memcpy(retVal->str + offset, currentStr->str, currentStr->len);
 
-    offset += currentStrLen;
+    offset += currentStr->len;
     current = (Value_Constructor *)current->args[1];
   }
 
-  return retVal;
+  return (Value *)retVal;
 }
 
 typedef struct {
@@ -169,7 +140,7 @@ typedef struct {
   int pos;
 } String_Iterator;
 
-Value *stringIteratorNew(char *str) {
+Value *idris2_stringIteratorNew(char *str) {
   int l = strlen(str);
 
   String_Iterator *it = (String_Iterator *)malloc(sizeof(String_Iterator));
@@ -179,31 +150,35 @@ Value *stringIteratorNew(char *str) {
   memcpy(it->str, str, l + 1); // Take a copy of str, in case it gets GCed
 
   Value_Arglist *arglist = newArglist(2, 2);
-  Value *(*onCollectRaw)(Value_Arglist *) = onCollectStringIterator_arglist;
+  Value *(*onCollectRaw)(Value_Arglist *) =
+      idris2_onCollectStringIterator_arglist;
   Value_Closure *onCollect = makeClosureFromArglist(onCollectRaw, arglist);
 
   return (Value *)makeGCPointer(it, onCollect);
 }
 
-Value *onCollectStringIterator(Value_Pointer *ptr, void *null) {
+Value *idris2_onCollectStringIterator(Value_Pointer *ptr, void *null) {
   String_Iterator *it = (String_Iterator *)ptr->p;
   free(it->str);
   free(it);
   return NULL;
 }
 
-Value *onCollectStringIterator_arglist(Value_Arglist *arglist) {
-  return onCollectStringIterator((Value_Pointer *)arglist->args[0],
-                                 arglist->args[1]);
+Value *idris2_onCollectStringIterator_arglist(Value_Arglist *arglist) {
+  return idris2_onCollectStringIterator((Value_Pointer *)arglist->args[0],
+                                        arglist->args[1]);
 }
 
-Value *stringIteratorToString(void *a, char *str, Value *it_p,
-                              Value_Closure *f) {
+Value *idris2_stringIteratorToString(void *a, char *str, Value *it_p,
+                                     Value_Closure *f) {
   String_Iterator *it = ((Value_GCPointer *)it_p)->p->p;
-  return apply_closure((Value *)f, (Value *)makeString(it->str + it->pos));
+  Value *var_1 = (Value *)idris2_makeString(strlen(it->str + it->pos), it->str + it->pos);
+  Value *retVal =  apply_closure((Value *)f, var_1);
+  removeReference(var_1);
+  return retVal;
 }
 
-Value *stringIteratorNext(char *s, Value *it_p) {
+Value *idris2_stringIteratorNext(char *s, Value *it_p) {
   String_Iterator *it = (String_Iterator *)((Value_GCPointer *)it_p)->p->p;
   char c = it->str[it->pos];
 

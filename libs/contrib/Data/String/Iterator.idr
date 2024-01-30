@@ -23,7 +23,7 @@ data StringIterator : String -> Type where [external]
 -- to avoid subverting the linearity guarantees of withString.
 %foreign
   "scheme:blodwen-string-iterator-new"
-  "RefC:stringIteratorNew"
+  "RefC:idris2_stringIteratorNew"
   "javascript:stringIterator:new"
 private
 fromString : (str : String) -> StringIterator str
@@ -38,7 +38,7 @@ withString str f = f (fromString str)
 ||| iterator `it`
 %foreign
   "scheme:blodwen-string-iterator-to-string"
-  "RefC:stringIteratorToString"
+  "RefC:idris2_stringIteratorToString"
   "javascript:stringIterator:toString"
 export
 withIteratorString : (str : String)
@@ -63,7 +63,7 @@ data UnconsResult : String -> Type where
 -- (e.g. byte offset into an UTF-8 string).
 %foreign
   "scheme:blodwen-string-iterator-next"
-  "RefC:stringIteratorNext"
+  "RefC:idris2_stringIteratorNext"
   "javascript:stringIterator:next"
 export
 uncons : (str : String) -> (1 it : StringIterator str) -> UnconsResult str

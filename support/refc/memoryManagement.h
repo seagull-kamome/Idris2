@@ -27,8 +27,11 @@ Value_Int64 *makeInt64(int64_t i);
 Value_Int8 *makeBool(int p);
 Value_Integer *makeInteger();
 Value_Integer *makeIntegerLiteral(char *i);
-Value_String *makeEmptyString(size_t l);
-Value_String *makeString(char *);
+
+extern Value_String idris2_emptyString;
+Value_String *idris2_makeEmptyString(size_t l);
+Value_String *idris2_makeString(size_t len, char const *);
+Value_String *idris2_makeStringFromCString(char const *);
 
 Value_Pointer *makePointer(void *);
 Value_GCPointer *makeGCPointer(void *ptr_Raw, Value_Closure *onCollectFct);

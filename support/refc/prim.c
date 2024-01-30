@@ -25,47 +25,32 @@ Value *idris2_Data_IORef_prim__writeIORef(Value *erased, Value *_ioref,
 //       System operations
 // -----------------------------------
 
-static Value *osstring = NULL;
-
-Value *idris2_System_Info_prim__os(void) {
-  if (osstring == NULL) {
-    osstring = (Value *)makeString(
 #ifdef _WIN32
-        "windows"
+Value_String idris2_osstring = {{1, STRING_TAG}, 7, {"windows"}};
 #elif _WIN64
-        "windows"
+Value_String idris2_osstring = {{1, STRING_TAG}, 7, {"windows"}};
 #elif __APPLE__ || __MACH__
-        "macOS"
+Value_String idris2_osstring = {{1, STRING_TAG}, 5, {"macOS"}};
 #elif __linux__
-        "Linux"
+Value_String idris2_osstring = {{1, STRING_TAG}, 5, {"Linux"}};
 #elif __FreeBSD__
-        "FreeBSD"
+Value_String idris2_osstring = {{1, STRING_TAG}, 7, {"FreeBSD"}};
 #elif __OpenBSD__
-        "OpenBSD"
+Value_String idris2_osstring = {{1, STRING_TAG}, 7, {"OpenBSD"}};
 #elif __NetBSD__
-        "NetBSD"
+Value_String idris2_osstring = {{1, STRING_TAG}, 6, {"NetBSD"}};
 #elif __DragonFly__
-        "DragonFly"
+Value_String idris2_osstring = {{1, STRING_TAG}, 9, {"DragonFly"}};
 #elif __unix || __unix__
-        "Unix"
+Value_String idris2_osstring = {{1, STRING_TAG}, 4, {"Unix"}};
 #else
-        "Other"
+Value_String idris2_osstring = {{1, STRING_TAG}, 5, {"Other"}};
 #endif
-    );
-  }
-  return newReference(osstring);
-}
 
 // NOTE: The codegen is obviously determined at compile time,
 //       so the backend should optimize it by replacing it with a constant.
 //       It would probably also be useful for conditional compilation.
-static Value *codegenstring = NULL;
-
-Value *idris2_System_Info_prim__codegen(void) {
-  if (codegenstring == NULL)
-    codegenstring = (Value *)makeString("refc");
-  return newReference(codegenstring);
-}
+Value_String idris2_codegenstring = {{1, STRING_TAG}, 4, {"refc"}};
 
 Value *idris2_crash(Value *msg) {
   Value_String *str = (Value_String *)msg;

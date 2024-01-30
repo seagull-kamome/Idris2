@@ -107,7 +107,8 @@ typedef struct {
 
 typedef struct {
   Value_header header;
-  char *str;
+  size_t len;
+  char str[]; // len + 1 bytes are allocated.
 } Value_String;
 
 typedef struct {

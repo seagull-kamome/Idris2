@@ -713,6 +713,8 @@ Ord a => Ord (SnocList a) where
         EQ => compare x y
         c  => c
 
+data PrimString : Type where [external]
+
 -- This works quickly because when string-concat builds the result, it allocates
 -- enough room in advance so there's only one allocation, rather than lots!
 --
@@ -720,10 +722,11 @@ Ord a => Ord (SnocList a) where
 -- If you need to concatenate strings at compile time, use Prelude.concat.
 %foreign
   "scheme:string-concat"
-  "RefC:fastConcat"
+  "RefC:idris2_stringFastConcat"
   "javascript:lambda:(xs)=>__prim_idris2js_array(xs).join('')"
-export
-fastConcat : List String -> String
+fastConcat' : List String -> PrimString
+public export %inline fastConcat : List String -> String
+fastConcat xs = believe_me $ fastConcat' xs
 
 %transform "fastConcat" concat {t = List} {a = String} = fastConcat
 
@@ -852,10 +855,12 @@ pack (x :: xs) = strCons x (pack xs)
 
 %foreign
     "scheme:string-pack"
-    "RefC:fastPack"
+    "RefC:idris2_stringFastPack"
     "javascript:lambda:(xs)=>__prim_idris2js_array(xs).join('')"
-export
-fastPack : List Char -> String
+fastPack' : List Char -> PrimString
+public export %inline fastPack : List Char -> String
+fastPack xs = believe_me $ fastPack' xs
+
 
 -- always use 'fastPack' at run time
 %transform "fastPack" pack = fastPack
@@ -879,10 +884,11 @@ unpack str = unpack' (prim__cast_IntegerInt (natToInteger (length str)) - 1) str
 -- If you need to unpack strings at compile time, use Prelude.unpack.
 %foreign
   "scheme:string-unpack"
-  "RefC:fastUnpack"
+  "RefC:idris2_stringFastUnpack"
   "javascript:lambda:(str)=>__prim_js2idris_array(Array.from(str))"
-export
-fastUnpack : String -> List Char
+fastUnpack' : PrimString -> List Char
+public export %inline fastUnpack : String -> List Char
+fastUnpack str = fastUnpack' $ believe_me str
 
 -- always use 'fastPack' at run time
 %transform "fastUnpack" unpack = fastUnpack

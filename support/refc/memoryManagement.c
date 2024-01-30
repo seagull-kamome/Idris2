@@ -128,22 +128,28 @@ Value_Integer *makeIntegerLiteral(char *i) {
   return retVal;
 }
 
-Value_String *makeEmptyString(size_t l) {
-  Value_String *retVal = IDRIS2_NEW_VALUE(Value_String);
+Value_String idris2_emptyString = {{1, STRING_TAG}, 0, {'\0'}};
+
+Value_String *idris2_makeEmptyString(size_t l) {
+  if (l == 0)
+    return (Value_String *)newReference((Value *)&idris2_emptyString);
+
+  Value_String *retVal =
+      (Value_String *)newValue(sizeof(Value_String) + sizeof(char) * (l + 1));
   retVal->header.tag = STRING_TAG;
-  retVal->str = malloc(l);
-  memset(retVal->str, 0, l);
+  retVal->len = l;
+  retVal->str[l] = '\0';
   return retVal;
 }
 
-Value_String *makeString(char *s) {
-  Value_String *retVal = IDRIS2_NEW_VALUE(Value_String);
-  int l = strlen(s);
-  retVal->header.tag = STRING_TAG;
-  retVal->str = malloc(l + 1);
-  memset(retVal->str, 0, l + 1);
+Value_String *idris2_makeString(size_t l, char const *s) {
+  Value_String *retVal = idris2_makeEmptyString(l);
   memcpy(retVal->str, s, l);
   return retVal;
+}
+
+Value_String *idris2_makeStringFromCString(char const *s) {
+  return idris2_makeString(strlen(s), s);
 }
 
 Value_Pointer *makePointer(void *ptr_Raw) {
@@ -218,7 +224,6 @@ void removeReference(Value *elem) {
       /* nothing to delete, added for sake of completeness */
       break;
     case STRING_TAG:
-      free(((Value_String *)elem)->str);
       break;
 
     case CLOSURE_TAG: {
