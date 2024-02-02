@@ -35,14 +35,14 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 * Fix memory leaks of IORef. Now that IORef holds values by itself,
   global_IORef_Storage is no longer needed.
 
+* Pattern matching generates simpler code. This reduces malloc/free and memory
+  consumption. It also makes debugging easier.
+
 * Supress code generation of _arglist wrappers to reduce code size and compilation time.
 
 * Removed Value_Arglist to reduce Closure's allocation overhead and make code simply.
 
 * Switch calling conventions based on the number of arguments to avoid limits on the number of arguments and to reduce stack usage.
-
-* Pattern matching generates simpler code. This reduces malloc/free and memory
-  consumption. It also makes debugging easier.
 
 * Stopped useless string copying in the constructor to save memory. Also, name
   generation was stopped for constructors that have tags.
