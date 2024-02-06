@@ -35,6 +35,9 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 * Fix memory leaks of IORef. Now that IORef holds values by itself,
   global_IORef_Storage is no longer needed.
 
+* Pattern matching generates simpler code. This reduces malloc/free and memory
+  consumption. It also makes debugging easier.
+
 * Added len field to Value_String.
 
 * Fix memory leaks of fastPack/fastUnpack/fastConcat.
