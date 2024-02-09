@@ -374,9 +374,40 @@ tryCaseOfCase (CConstCase fc (CConstCase fc' x xalts xdef) alts def)
     canCaseOfCase xs mdef = all constCase xs && maybe True isConst mdef
 tryCaseOfCase _ = Nothing
 
+
+-- simplify a special pattern matches.
+sortCase : CExp vars -> CExp vars
+sortCase = go where
+  tryErase : CExp vars -> CExp vars -> CExp vars -> CExp vars
+  tryErase sc e1 e2 = case sc of
+    CCon _ _ _ _ _ => e1
+    CPrimVal _ _ => e1
+    CCrash _ _ => sc
+    _ => e2
+  --
+  cmpConstr : Name -> CExp vars -> CExp vars -> Lazy (CExp vars) -> CExp vars
+  cmpConstr con1 (CCon _ con2 _ _ _) sc c = if con1 == con2 then sc else c
+  cmpConstr _ _ _ c = c
+  --
+  go : CExp vars -> CExp vars
+  go exp@(CConCase fc sc [] (Just c1)) = tryErase sc c1 exp
+  go exp@(CConCase fc sc alts Nothing) =
+    case alts of
+      [MkConAlt con UNIT _ [] c1]                                => cmpConstr con c1 sc $ tryErase sc c1 (CConCase fc sc [] (Just c1))
+      [MkConAlt con NIL _ [] c1, a2@(MkConAlt _ CONS _ _ _)]     => cmpConstr con c1 sc $ CConCase fc sc [a2] (Just c1)
+      [a1@(MkConAlt _ CONS _ _ _), MkConAlt con NIL _ [] c2]     => cmpConstr con c2 sc $ CConCase fc sc [a1] (Just c2)
+      [MkConAlt con NOTHING _ [] c1, a2@(MkConAlt _ JUST _ _ _)] => cmpConstr con c1 sc $ CConCase fc sc [a2] (Just c1)
+      [a1@(MkConAlt _ JUST _ _ _), MkConAlt con NOTHING _ [] c2] => cmpConstr con c2 sc $ CConCase fc sc [a1] (Just c2)
+      [MkConAlt con ZERO _ [] c1, a2@(MkConAlt _ SUCC _ _ _)]    => cmpConstr con c1 sc $ CConCase fc sc [a2] (Just c1)
+      [a1@(MkConAlt _ SUCC _ _ _), MkConAlt con ZERO _ [] c2]    => cmpConstr con c2 sc $ CConCase fc sc [a1] (Just c2)
+      _ => exp
+  go exp = exp
+
+
+
 export
 caseOfCase : CExp vars -> CExp vars
-caseOfCase tm = go 5 tm
+caseOfCase tm = sortCase $ go 5 tm
   where
     go : Nat -> CExp vars -> CExp vars
     go Z tm = tm
