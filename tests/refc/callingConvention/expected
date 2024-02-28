@@ -10,9 +10,7 @@ Value *Main_last
 )
 {
     Value * tmp_66 = NULL;                                   // Main:5:8--5:14
-    if (NULL == var_0 /* Prelude.Basics.Nil [nil] */) {
-        tmp_66 = var_1;
-    } else if (NULL != var_0 /* Prelude.Basics.(::) [cons] */) {
+    if (NULL != var_0 /* Prelude.Basics.(::) [cons] */) {
         Value *var_2 = ((Value_Constructor*)var_0)->args[0];
         Value *var_3 = ((Value_Constructor*)var_0)->args[1];
         newReference(var_2);
@@ -24,6 +22,9 @@ Value *Main_last
         ((Value_Closure*)closure_67)->args[0] = var_3;
         ((Value_Closure*)closure_67)->args[1] = var_2;
         tmp_66 = closure_67;
+    } else {
+        removeReference(var_0);
+        tmp_66 = var_1;
     }
     return tmp_66;
 }
