@@ -44,7 +44,7 @@ void idris2_dumpMemoryStats() {}
 
 Value *newValue(size_t size) {
   Value *retVal = (Value *)malloc(size);
-  IDRIS2_REFC_VERIFY(retVal, "malloc failed");
+  IDRIS2_REFC_VERIFY(retVal && !idris2_vp_is_unboxed(retVal), "malloc failed");
   IDRIS2_INC_MEMSTAT(n_newValue);
   retVal->header.refCounter = 1;
   retVal->header.tag = NO_TAG;

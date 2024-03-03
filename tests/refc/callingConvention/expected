@@ -168,8 +168,8 @@ Value *Main_main_10
     Value * var_4 = idris2_trampoline(Prelude_Show_show_Show_Integer(var_3));
     Value * var_5 = ((Value*)&idris2_constant_String_46);
     Value *primVar_47 = strAppend(var_4, var_5);
-    removeReference(var_5);
     removeReference(var_4);
+    removeReference(var_5);
     Value * var_6 = primVar_47;                              // Prelude.IO:98:22--98:34
     Value *closure_48 = (Value *)idris2_makeClosure((Value *(*)())Prelude_IO_prim__putStr, 2, 2);
                                                              // Prelude.IO:98:22--98:34

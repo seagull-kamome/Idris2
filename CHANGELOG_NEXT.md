@@ -32,15 +32,11 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 
 ### Backend changes
 
-#### RefC
+#### RefC Backend
 
 * Compiler can emit precise reference counting instructions where a reference
   is dropped as soon as possible. This allows you to reuse unique variables and
   optimize memory consumption.
-
-### Compiler changes
-
-#### RefC Backend
 
 * Fix invalid memory read onf strSubStr.
 
@@ -59,8 +55,7 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 * Unbox Bits32,Bits16,Bits8,Int32,Int16,Int8. These types are now packed into
   Value*. Now, RefC backend requires at least 32 bits for pointers.
   16-bit CPUs are no longer supported. And we expect the address returned by
-  malloc to be aligned with at least 32 bits. Otherwise the RefC runtime will
-  malfunction.
+  malloc to be aligned with at least 32 bits. Otherwise it cause a runtime error.
 
 * Rename C function to avoid confliction. But only a part.
 

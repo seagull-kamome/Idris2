@@ -26,7 +26,7 @@ import System.File
 import Protocol.Hex
 import Libraries.Utils.Path
 
-%default covering
+%default total
 
 showcCleanStringChar : Char -> String -> String
 showcCleanStringChar ' ' = ("_" ++)
@@ -141,11 +141,6 @@ cPrimType CharType = "Char"
 cPrimType DoubleType = "Double"
 cPrimType WorldType = "void"
 
-||| Generate scheme for a plain function.
-plainOp : String -> List String -> String
-plainOp op args = op ++ "(" ++ (showSep ", " args) ++ ")"
-
-
 ||| Generate scheme for a primitive function.
 cOp : {0 arity : Nat} -> PrimFn arity -> Vect arity String -> String
 cOp (Neg ty)      [x]       = "idris2_negate_"  ++  cPrimType ty ++ "(" ++ x ++ ")"
@@ -187,22 +182,20 @@ cOp StrAppend     [x, y]    = "strAppend(" ++ x ++ ", " ++ y ++ ")"
 cOp StrSubstr     [x, y, z] = "strSubstr(" ++ x ++ ", " ++ y  ++ ", " ++ z ++ ")"
 cOp BelieveMe     [_, _, x] = "newReference(" ++ x ++ ")"
 cOp Crash         [_, msg]  = "idris2_crash(" ++ msg ++ ");"
-cOp fn args = plainOp (show fn) (toList args)
-
-
+cOp fn args = show fn ++ "(" ++ (showSep ", " $ toList args) ++ ")"
 
 varName : AVar -> String
 varName (ALocal i) = "var_" ++ (show i)
 varName (ANull)    = "NULL"
 
 
-constantName : Constant -> Nat -> String
+constantName : Constant -> String -> String
 constantName c n = case c of
   I x => "((Value*)&idris2_constant_Int64_\{cCleanString $ show x})"
   I64 x => "((Value*)&idris2_constant_Int64_\{cCleanString $ show x})"
   B64 x => "((Value*)&idris2_constant_Bits64_\{show x})"
   Db x => "((Value*)&idris2_constant_Double_\{cCleanString $ show x})"
-  Str x => "((Value*)&idris2_constant_String_\{show n})"
+  Str x => "((Value*)&idris2_constant_String_\{n})"
   _ => ""
 
 
@@ -236,16 +229,15 @@ Output = DList String
 
 ------------------------------------------------------------------------
 
-getNextCounter : {auto a : Ref ArgCounter Nat} -> Core Nat
+getNextCounter : {auto a : Ref ArgCounter Nat} -> Core String
 getNextCounter = do
     c <- get ArgCounter
     put ArgCounter (S c)
-    pure c
+    pure $ show c
 
 getNewVarThatWillNotBeFreedAtEndOfBlock : {auto a : Ref ArgCounter Nat} -> Core String
 getNewVarThatWillNotBeFreedAtEndOfBlock = do
-    c <- getNextCounter
-    pure $ "tmp_" ++ show c
+    pure $ "tmp_" ++ !(getNextCounter)
 
 
 maxLineLengthForComment : Nat
@@ -287,11 +279,6 @@ emit fc line = do
     update OutfileText $ case isLTE (length indentedLine) maxLineLengthForComment of
         (Yes _) => flip snoc (lJust indentedLine maxLineLengthForComment ' ' ++ " " ++ comment)
         (No _)  => flip appendR [indentedLine, (lJust ""   maxLineLengthForComment ' ' ++ " " ++ comment)]
-
-addHeader : {auto h : Ref HeaderFiles (SortedSet String)}
-         -> String
-         -> Core ()
-addHeader = update HeaderFiles . insert
 
 applyFunctionToVars : {auto oft : Ref OutfileText Output}
                     -> {auto il : Ref IndentLevel Nat}
@@ -358,7 +345,7 @@ makeClosure : {auto a : Ref ArgCounter Nat}
             -> Nat
             -> Core String
 makeClosure fc n args missing = do
-    let closure = "closure_\{show $ !(getNextCounter)}"
+    let closure = "closure_\{!(getNextCounter)}"
     let nargs = length args
     emit fc "Value *\{closure} = (Value *)idris2_makeClosure((Value *(*)())\{cName n}, \{show $ nargs + missing}, \{show nargs});"
     fillArgs !(get EnvTracker) "((Value_Closure*)\{closure})->args" args 0
@@ -447,8 +434,7 @@ addReuseConstructor reuseMap sc conName conArgs consts shouldDrop actualReuseCon
     if (isNothing $ SortedMap.lookup conName reuseMap)
        && contains conName consts
        && (isJust $ find (== sc) shouldDrop) then do
-        c <- getNextCounter
-        let constr = "constructor_" ++ (show c)
+        let constr = "constructor_" ++ !(getNextCounter)
         emit EmptyFC $ "Value_Constructor* " ++ constr ++ " = NULL;"
         -- If the constructor variable is unique (has 1 reference), then assign it for reuse
         emit EmptyFC $ "if (idris2_isUnique(" ++ sc ++ ")) {"
@@ -470,29 +456,36 @@ addReuseConstructor reuseMap sc conName conArgs consts shouldDrop actualReuseCon
         pure (shouldDrop \\ conArgs, actualReuseConsts)
 
 mutual
+    covering
     concaseBody : {auto a : Ref ArgCounter Nat}
                  -> {auto e : Ref EnvTracker Env}
                  -> {auto oft : Ref OutfileText Output}
                  -> {auto il : Ref IndentLevel Nat}
-                 -> {auto _ : Ref ConstDef (SortedMap Constant Nat)}
-                 -> List String -> List String
+                 -> {auto _ : Ref ConstDef (SortedMap Constant String)}
+                 -> Env
                  -> String -> String -> List Int -> ANF -> TailPositionStatus
                  -> Core ()
-    concaseBody dropVars dropReuseCons returnvar expr args bdy tailPosition = do
+    concaseBody env returnvar expr args body tailPosition = do
         increaseIndentation
         _ <- foldlC (\k, arg => do
             emit emptyFC "Value *var_\{show arg} = ((Value_Constructor*)\{expr})->args[\{show k}];"
             pure (S k) ) 0 args
-        removeVars dropVars
+
+        let (shouldDrop, actualOwned) = dropUnusedOwnedVars env.owned (freeVariables body)
+        let usedCons = usedConstructors body
+        let (dropReuseCons, actualReuseMap) = dropUnusedReuseCons env.reuseMap usedCons
+        put EnvTracker ({owned := actualOwned, reuseMap := actualReuseMap} env)
+        removeVars shouldDrop
         removeReuseConstructors dropReuseCons
-        emit emptyFC "\{returnvar} = \{!(cStatementsFromANF bdy tailPosition)};"
+        emit emptyFC "\{returnvar} = \{!(cStatementsFromANF body tailPosition)};"
         decreaseIndentation
 
+    covering
     cStatementsFromANF : {auto a : Ref ArgCounter Nat}
                       -> {auto oft : Ref OutfileText Output}
                       -> {auto il : Ref IndentLevel Nat}
                       -> {auto e : Ref EnvTracker Env}
-                      -> {auto _ : Ref ConstDef (SortedMap Constant Nat)}
+                      -> {auto _ : Ref ConstDef (SortedMap Constant String)}
                       -> ANF
                       -> TailPositionStatus
                       -> Core String
@@ -510,7 +503,6 @@ mutual
                     pure "idris2_trampoline(\{cName n}(\{concat $ intersperse ", " args'}))"
 
     cStatementsFromANF (AUnderApp fc n missing args) _ = makeClosure fc n args missing
-
     cStatementsFromANF (AApp fc _ closure arg) tailPosition = do
        env <- get EnvTracker
        pure $ (case tailPosition of
@@ -550,7 +542,7 @@ mutual
                         emit fc "}"
                         pure constr
                     Nothing => do
-                        let constr = "constructor_\{show !(getNextCounter)}"
+                        let constr = "constructor_\{!(getNextCounter)}"
                         emit fc $ "Value_Constructor* " ++ constr ++ createNewConstructor
                         when (Nothing == tag) $ emit fc "\{constr}->name = idris2_constr_\{cName n};"
                         pure constr
@@ -558,12 +550,11 @@ mutual
                 pure "(Value*)\{constr}"
 
     cStatementsFromANF (AOp fc _ op args) _ = do
-        c <- getNextCounter
-        let resultVar = "primVar_" ++ (show c)
+        let resultVar = "primVar_" ++ !(getNextCounter)
         let argsVect = map (avarToC !(get EnvTracker)) args
         emit fc $ "Value *" ++ resultVar ++ " = " ++ cOp op argsVect ++ ";"
         -- Removing arguments that apply to primitive functions
-        removeVars (foldl (\acc, elem => elem :: acc) [] (map varName args))
+        removeVars $ toList $ map varName args
         pure resultVar
 
     cStatementsFromANF (AExtPrim fc _ p args) _ = do
@@ -593,16 +584,16 @@ mutual
                         Nothing   => emit emptyFC "\{els}if (! strcmp(((Value_Constructor *)\{sc'})->name, idris2_constr_\{cName name})) {"
                         Just tag' => emit emptyFC "\{els}if (((Value_Constructor *)\{sc'})->tag == \{show tag'} /* \{show name} */) {"
 
-            let conArgs = ALocal <$> args
-            let owned = if erased then delete sc env.owned else env.owned
-            let ownedWithArgs = union (fromList conArgs) owned
-            let (shouldDrop, actualOwned) = dropUnusedOwnedVars ownedWithArgs (freeVariables body)
-            let usedCons = usedConstructors body
-            let (dropReuseCons, actualReuseMap) = dropUnusedReuseCons env.reuseMap usedCons
             increaseIndentation
             _ <- foldlC (\k, arg => do
                 emit emptyFC "Value *var_\{show arg} = ((Value_Constructor*)\{sc'})->args[\{show k}];"
                 pure (S k) ) 0 args
+
+            let conArgs = ALocal <$> args
+            let ownedWithArgs = union (fromList conArgs) $ if erased then delete sc env.owned else env.owned
+            let (shouldDrop, actualOwned) = dropUnusedOwnedVars ownedWithArgs (freeVariables body)
+            let usedCons = usedConstructors body
+            let (dropReuseCons, actualReuseMap) = dropUnusedReuseCons env.reuseMap usedCons
             (shouldDrop, actualReuseMap) <- addReuseConstructor env.reuseMap sc' name (varName <$> conArgs) usedCons shouldDrop actualReuseMap
             removeVars shouldDrop
             removeReuseConstructors dropReuseCons
@@ -614,12 +605,8 @@ mutual
         case mDef of
             Nothing => pure ()
             Just body => do
-                let (shouldDrop, actualOwned) = dropUnusedOwnedVars env.owned (freeVariables body)
-                let usedCons = usedConstructors body
-                let (dropReuseCons, actualReuseMap) = dropUnusedReuseCons env.reuseMap usedCons
                 emit emptyFC "} else {"
-                put EnvTracker ({owned := actualOwned, reuseMap := actualReuseMap} env)
-                concaseBody shouldDrop dropReuseCons switchReturnVar "" [] body tailPosition
+                concaseBody env switchReturnVar "" [] body tailPosition
         emit emptyFC "}"
         pure switchReturnVar
 
@@ -633,38 +620,26 @@ mutual
                 tmpint <- getNewVarThatWillNotBeFreedAtEndOfBlock
                 emit emptyFC "int \{tmpint} = idris2_extractInt(\{sc'});"
                 _ <- foldlC (\els, (MkAConstAlt c body) => do
-                    let (shouldDrop, actualOwned) = dropUnusedOwnedVars env.owned (freeVariables body)
-                    let usedCons = usedConstructors body
-                    let (dropReuseCons, actualReuseMap) = dropUnusedReuseCons env.reuseMap usedCons
                     emit emptyFC "\{els}if (\{tmpint} == \{show $ const2Integer c 0}) {"
-                    put EnvTracker ({owned := actualOwned, reuseMap := actualReuseMap} env)
-                    concaseBody shouldDrop dropReuseCons switchReturnVar "" [] body tailPosition
+                    concaseBody env switchReturnVar "" [] body tailPosition
                     pure "} else ") "" alts
                 pure ()
 
             False => do
                 _ <- foldlC (\els, (MkAConstAlt c body) => do
-                    let (shouldDrop, actualOwned) = dropUnusedOwnedVars env.owned (freeVariables body)
-                    let usedCons = usedConstructors body
-                    let (dropReuseCons, actualReuseMap) = dropUnusedReuseCons env.reuseMap usedCons
                     case c of
                         Str x => emit emptyFC "\{els}if (! strcmp(\{cStringQuoted x}, ((Value_String *)\{sc'})->str)) {"
                         Db  x => emit emptyFC "\{els}if (((Value_Double *)\{sc'})->d == \{show x}) {"
                         x => coreFail $ InternalError "[refc] AConstCase : unsupported type. \{show fc} \{show x}"
-                    put EnvTracker ({owned := actualOwned, reuseMap := actualReuseMap} env)
-                    concaseBody shouldDrop dropReuseCons switchReturnVar "" [] body tailPosition
+                    concaseBody env switchReturnVar "" [] body tailPosition
                     pure "} else ") "" alts
                 pure ()
 
         case def of
             Nothing => pure ()
             Just body => do
-                let (shouldDrop, actualOwned) = dropUnusedOwnedVars env.owned (freeVariables body)
-                let usedCons = usedConstructors body
-                let (dropReuseCons, actualReuseMap) = dropUnusedReuseCons env.reuseMap usedCons
                 emit emptyFC "} else {"
-                put EnvTracker ({owned := actualOwned, reuseMap := actualReuseMap} env)
-                concaseBody shouldDrop dropReuseCons switchReturnVar "" [] body tailPosition
+                concaseBody env switchReturnVar "" [] body tailPosition
         emit emptyFC "}"
         pure switchReturnVar
 
@@ -678,7 +653,7 @@ mutual
                Nothing => do
                   constid <- case c of
                        Str _ => getNextCounter
-                       _ => pure 0
+                       _ => pure ""
                   put ConstDef $ insert c constid constdefs
                   pure $ constantName c constid
       where
@@ -711,7 +686,6 @@ mutual
 addCommaToList : List String -> List String
 addCommaToList [] = []
 addCommaToList (x :: xs) = ("  " ++ x) :: map (", " ++) xs
-
 
 getArgsNrList : List ty -> Nat -> List Nat
 getArgsNrList [] _ = []
@@ -827,9 +801,10 @@ additionalFFIStub name argTypes retType =
     " (*" ++ cName name ++ ")(" ++
     (concat $ intersperse ", " $ map cTypeOfCFType argTypes) ++ ") = (void*)missing_ffi;\n"
 
+covering
 createCFunctions : {auto c : Ref Ctxt Defs}
                 -> {auto a : Ref ArgCounter Nat}
-                -> {auto _ : Ref ConstDef (SortedMap Constant Nat)}
+                -> {auto _ : Ref ConstDef (SortedMap Constant String)}
                 -> {auto f : Ref FunctionDefinitions (List String)}
                 -> {auto oft : Ref OutfileText Output}
                 -> {auto il : Ref IndentLevel Nat}
@@ -884,7 +859,7 @@ createCFunctions n (MkAForeign ccs fargs ret) = do
                            else NS (mkNamespace lang) n
           if isStandardFFI
              then case extLibOpts of
-                      [lib, header] => addHeader header
+                      [lib, header] => update HeaderFiles $ insert header
                       _ => pure ()
              else emit EmptyFC $ additionalFFIStub fctName fargs ret
           let fnDef = "Value *" ++ (cName n) ++ "(" ++ showSep ", " (replicate (length fargs) "Value *") ++ ");"
@@ -928,13 +903,13 @@ createCFunctions n (MkAError exp) = coreFail $ InternalError "[refc] Error with 
 -- not really total but this way this internal error does not contaminate everything else
 
 
-genConstant : Constant -> Nat -> String
+genConstant : Constant -> String -> String
 genConstant c n = case c of
   I x   => let x' = show x in go x' "Int64" "INT64" (showIntMin x)
   I64 x => let x' = show x in go x' "Int64" "INT64" (showInt64Min x)
   B64 x => let x' = show x in go x' "Bits64" "BITS64" "UINT64_C(\{x'})"
   Db x  => let x' = show x in go x' "Double" "DOUBLE" x'
-  Str x => go (show n) "String" "STRING" (cStringQuoted x)
+  Str x => go n "String" "STRING" (cStringQuoted x)
   _ => "/* bad constant */"
   where
     go : String -> String -> String -> String -> String
@@ -948,7 +923,7 @@ header : {auto c : Ref Ctxt Defs}
       -> {auto o : Ref OutfileText Output}
       -> {auto il : Ref IndentLevel Nat}
       -> {auto h : Ref HeaderFiles (SortedSet String)}
-      -> {auto _ : Ref ConstDef (SortedMap Constant Nat)}
+      -> {auto _ : Ref ConstDef (SortedMap Constant String)}
       -> Core ()
 header = do
     let initLines = """
@@ -986,7 +961,7 @@ footer = do
       }
       """
 
-export
+export covering
 generateCSourceFile : {auto c : Ref Ctxt Defs}
                    -> {default [] additionalFFILangs : List String}
                    -> List (Name, ANFDef)
@@ -1008,7 +983,7 @@ generateCSourceFile defs outn =
      coreLift_ $ writeFile outn code
      log "compiler.refc" 10 $ "Generated C file " ++ outn
 
-export
+export covering
 compileExpr : UsePhase
            -> Ref Ctxt Defs
            -> Ref Syn SyntaxInfo
@@ -1035,7 +1010,7 @@ compileExpr _ _ _ _ _ _ _ = pure Nothing
 
 
 
-export
+export covering
 executeExpr : Ref Ctxt Defs -> Ref Syn SyntaxInfo ->
               (execDir : String) -> ClosedTerm -> Core ()
 executeExpr c s tmpDir tm = do
@@ -1044,6 +1019,6 @@ executeExpr c s tmpDir tm = do
        | Nothing => do coreLift_ $ putStrLn "Error: failed to compile"
      coreLift_ $ system (tmpDir </> outfile)
 
-export
+export covering
 codegenRefC : Codegen
 codegenRefC = MkCG (compileExpr ANF) executeExpr Nothing Nothing
