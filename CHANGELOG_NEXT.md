@@ -38,6 +38,18 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
   is dropped as soon as possible. This allows you to reuse unique variables and
   optimize memory consumption.
 
+### Compiler changes
+
+* The compiler now differentiates between "package search path" and "package
+  directories." Previously both were combined (as seen in the `idris2 --paths`
+  output for "Package Directories"). Now entries in the search path will be
+  printed under an "Package Search Paths" entry and package directories will
+  continue to be printed under "Package Directories." The `IDRIS2_PACKAGE_PATH`
+  environment variable adds to the "Package Search Paths." Functionally this is
+  not a breaking change.
+
+#### RefC Backend
+
 * Fix invalid memory read onf strSubStr.
 
 * Fix memory leaks of IORef. Now that IORef holds values by itself,
@@ -103,6 +115,9 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
   `TTImp` at the input along with already traversed one. Existing `mapATTImp` is
   implemented through the newly added one. The similar alternative for `mapMTTImp`
   is added too.
+
+* Removed need for the runtime value of the implicit argument in `succNotLTEpred`,
+  and added its result as an `Uninhabited` instance.
 
 #### Contrib
 
