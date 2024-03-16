@@ -171,7 +171,7 @@ typedef struct {
 typedef struct {
   Value_header header;
   int capacity;
-  Value **arr;
+  Value *arr[];
 } Value_Array;
 
 typedef struct {

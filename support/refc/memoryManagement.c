@@ -173,11 +173,10 @@ Value_Buffer *makeBuffer(void *buf) {
 }
 
 Value_Array *makeArray(int length) {
-  Value_Array *a = IDRIS2_NEW_VALUE(Value_Array);
+  Value_Array *a =
+      (Value_Array *)newValue(sizeof(Value_Array) + sizeof(Value *) * length);
   a->header.tag = ARRAY_TAG;
   a->capacity = length;
-  a->arr = (Value **)malloc(sizeof(Value *) * length);
-  memset(a->arr, 0, sizeof(Value *) * length);
   return a;
 }
 
@@ -258,7 +257,6 @@ void removeReference(Value *elem) {
       for (int i = 0; i < a->capacity; i++) {
         removeReference(a->arr[i]);
       }
-      free(a->arr);
       break;
     }
     case POINTER_TAG:
