@@ -26,7 +26,25 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 
 ### Language changes
 
+* Autobind and Typebind modifier on operators allow the user to
+  customise the syntax of operator to look more like a binder.
+  See [#3113](https://github.com/idris-lang/Idris2/issues/3113).
+
+#### RefC Backend
+
+* Compiler can emit precise reference counting instructions where a reference
+  is dropped as soon as possible. This allows you to reuse unique variables and
+  optimize memory consumption.
+
 ### Compiler changes
+
+* The compiler now differentiates between "package search path" and "package
+  directories." Previously both were combined (as seen in the `idris2 --paths`
+  output for "Package Directories"). Now entries in the search path will be
+  printed under an "Package Search Paths" entry and package directories will
+  continue to be printed under "Package Directories." The `IDRIS2_PACKAGE_PATH`
+  environment variable adds to the "Package Search Paths." Functionally this is
+  not a breaking change.
 
 #### RefC Backend
 
@@ -38,12 +56,6 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
 * Pattern matching generates simpler code. This reduces malloc/free and memory
   consumption. It also makes debugging easier.
 
-* Supress code generation of _arglist wrappers to reduce code size and compilation time.
-
-* Removed Value_Arglist to reduce Closure's allocation overhead and make code simply.
-
-* Switch calling conventions based on the number of arguments to avoid limits on the number of arguments and to reduce stack usage.
-
 * Stopped useless string copying in the constructor to save memory. Also, name
   generation was stopped for constructors that have tags.
 
@@ -51,9 +63,29 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
   NULL.
 
 * Unbox Bits32,Bits16,Bits8,Int32,Int16,Int8. These types are now packed into
-  Value*.
+  Value*. Now, RefC backend requires at least 32 bits for pointers.
+  16-bit CPUs are no longer supported. And we expect the address returned by
+  malloc to be aligned with at least 32 bits. Otherwise it cause a runtime error.
 
 * Rename C function to avoid confliction. But only a part.
+
+* Supress code generation of _arglist wrappers to reduce code size and compilation time.
+
+* Removed Value_Arglist to reduce Closure's allocation overhead and make code simply.
+
+* Switch calling conventions based on the number of arguments to avoid limits on
+  the number of arguments and to reduce stack usage.
+
+* Values that reference counter reaches to its limitmaximum are immortalized
+  to avoid overflow the counter. This can cause memory leaks, but they occurs
+  rarely and are a better choice than crashing.
+  Since overflow is no longer a concern, 'Value_Header' was deduces in size to
+  improve memory utilization.
+
+* Commonly seen values such as integers less than 100 are predefined and shared.
+
+* Constant String, Int64, Bits64 and Double values are allocated statically as
+  indestructible and shared.
 
 #### NodeJS Backend
 
@@ -77,9 +109,20 @@ This CHANGELOG describes the merged but unreleased changes. Please see [CHANGELO
   with the exception of the latter dealing in `Bits8` which is more correct than
   `Int`.
 
+* Added an alternative `TTImp` traversal function `mapATTImp'` taking the original
+  `TTImp` at the input along with already traversed one. Existing `mapATTImp` is
+  implemented through the newly added one. The similar alternative for `mapMTTImp`
+  is added too.
+
+* Removed need for the runtime value of the implicit argument in `succNotLTEpred`.
+
 #### Contrib
 
 * `Data.List.Lazy` was moved from `contrib` to `base`.
 
 * Existing `System.Console.GetOpt` was extended to support errors during options
   parsing in a backward-compatible way.
+
+#### Network
+
+* Add a missing function parameter (the flag) in the C implementation of idrnet_recv_bytes

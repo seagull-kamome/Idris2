@@ -12,8 +12,11 @@ Value *idris2_Data_IORef_prim__writeIORef(Value *, Value *, Value *, Value *);
 
 // Sys
 
-Value *idris2_System_Info_prim__os(void);
-Value *idris2_System_Info_prim__codegen(void);
+extern Value_String idris2_predefined_osstring;
+extern Value_String idris2_predefined_codegenstring;
+#define idris2_System_Info_prim__os() ((Value *)&idris2_predefined_osstring)
+#define idris2_System_Info_prim__codegen()                                     \
+  ((Value *)&idris2_predefined_codegenstring)
 Value *idris2_crash(Value *msg);
 
 // Array
@@ -21,7 +24,7 @@ Value *idris2_crash(Value *msg);
 Value *idris2_Data_IOArray_Prims_prim__newArray(Value *, Value *, Value *,
                                                 Value *);
 #define idris2_Data_IOArray_Prims_prim__arrayGet(rased, array, i, word)        \
-  (newReference(((Value_Array *)(array))->arr[((Value_Int64 *)i)->i64]))
+  (newReference(((Value_Array *)(array))->arr[idris2_vp_to_Int64(i)]))
 Value *idris2_Data_IOArray_Prims_prim__arraySet(Value *, Value *, Value *,
                                                 Value *, Value *);
 

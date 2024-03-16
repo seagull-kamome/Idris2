@@ -1,7 +1,9 @@
 #include "prim.h"
-#include "refc_util.h"
+
 #include <string.h>
 #include <unistd.h>
+
+#include "refc_util.h"
 
 Value *idris2_Data_IORef_prim__newIORef(Value *erased, Value *input_value,
                                         Value *_world) {
@@ -25,47 +27,35 @@ Value *idris2_Data_IORef_prim__writeIORef(Value *erased, Value *_ioref,
 //       System operations
 // -----------------------------------
 
-static Value *osstring = NULL;
-
-Value *idris2_System_Info_prim__os(void) {
-  if (osstring == NULL) {
-    osstring = (Value *)idris2_mkString(
+Value_String idris2_predefined_osstring = {IDRIS2_STOCKVAL(STRING_TAG),
 #ifdef _WIN32
-        "windows"
+                                           "windows"
 #elif _WIN64
-        "windows"
+                                           "windows"
 #elif __APPLE__ || __MACH__
-        "macOS"
+                                           "macOS"
 #elif __linux__
-        "Linux"
+                                           "Linux"
 #elif __FreeBSD__
-        "FreeBSD"
+                                           "FreeBSD"
 #elif __OpenBSD__
-        "OpenBSD"
+                                           "OpenBSD"
 #elif __NetBSD__
-        "NetBSD"
+                                           "NetBSD"
 #elif __DragonFly__
-        "DragonFly"
+                                           "DragonFly"
 #elif __unix || __unix__
-        "Unix"
+                                           "Unix"
 #else
-        "Other"
+                                           "Other"
 #endif
-    );
-  }
-  return newReference(osstring);
-}
+};
 
 // NOTE: The codegen is obviously determined at compile time,
 //       so the backend should optimize it by replacing it with a constant.
 //       It would probably also be useful for conditional compilation.
-static Value *codegenstring = NULL;
-
-Value *idris2_System_Info_prim__codegen(void) {
-  if (codegenstring == NULL)
-    codegenstring = (Value *)idris2_mkString("refc");
-  return newReference(codegenstring);
-}
+Value_String idris2_predefined_codegenstring = {IDRIS2_STOCKVAL(STRING_TAG),
+                                                "refc"};
 
 Value *idris2_crash(Value *msg) {
   Value_String *str = (Value_String *)msg;
@@ -82,7 +72,7 @@ Value *idris2_crash(Value *msg) {
 
 Value *idris2_Data_IOArray_Prims_prim__newArray(Value *erased, Value *_length,
                                                 Value *v, Value *_word) {
-  int length = idris2_vp_to_Int64(_length); // it sould Int32
+  int length = idris2_vp_to_Int64(_length);
   Value_Array *a = makeArray(length);
 
   for (int i = 0; i < length; i++) {
@@ -93,11 +83,11 @@ Value *idris2_Data_IOArray_Prims_prim__newArray(Value *erased, Value *_length,
 }
 
 Value *idris2_Data_IOArray_Prims_prim__arraySet(Value *erased, Value *_array,
-                                                Value *_index, Value *v,
+                                                Value *index, Value *v,
                                                 Value *_word) {
   Value_Array *a = (Value_Array *)_array;
-  removeReference(a->arr[((Value_Int64 *)_index)->i64]);
-  a->arr[((Value_Int64 *)_index)->i64] = newReference(v);
+  removeReference(a->arr[idris2_vp_to_Int64(index)]);
+  a->arr[idris2_vp_to_Int64(index)] = newReference(v);
   return NULL;
 }
 
@@ -112,7 +102,7 @@ Value *idris2_Prelude_IO_prim__onCollect(Value *_erased, Value *_anyPtr,
   Value_GCPointer *retVal = IDRIS2_NEW_VALUE(Value_GCPointer);
   retVal->header.tag = GC_POINTER_TAG;
   retVal->p = (Value_Pointer *)newReference(_anyPtr);
-  retVal->onCollectFct = (Value_Closure *)newReference(_freeingFunction);
+  retVal->onCollectFct = (Value_Closure *)_freeingFunction;
   return (Value *)retVal;
 }
 
@@ -122,7 +112,7 @@ Value *idris2_Prelude_IO_prim__onCollectAny(Value *_anyPtr,
   Value_GCPointer *retVal = IDRIS2_NEW_VALUE(Value_GCPointer);
   retVal->header.tag = GC_POINTER_TAG;
   retVal->p = (Value_Pointer *)newReference(_anyPtr);
-  retVal->onCollectFct = (Value_Closure *)newReference(_freeingFunction);
+  retVal->onCollectFct = (Value_Closure *)_freeingFunction;
   return (Value *)retVal;
 }
 
@@ -201,10 +191,10 @@ Value *System_Concurrency_Raw_prim__conditionWaitTimeout(Value *_condition,
                                                          Value *_world) {
   Value_Condition *cond = (Value_Condition *)_condition;
   Value_Mutex *mutex = (Value_Mutex *)_mutex;
-  Value_Int64 *timeout = (Value_Int64 *)_timeout;
+  int64_t timeout = idris2_vp_to_Int64(_timeout);
   struct timespec t;
-  t.tv_sec = timeout->i64 / 1000000;
-  t.tv_nsec = timeout->i64 % 1000000;
+  t.tv_sec = timeout / 1000000;
+  t.tv_nsec = timeout % 1000000;
   int r = pthread_cond_timedwait(cond->cond, mutex->mutex, &t);
   IDRIS2_REFC_VERIFY(!r, "pthread_cond_timedwait failed: %s", strerror(r));
   return NULL;

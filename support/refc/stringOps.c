@@ -1,4 +1,5 @@
 #include "stringOps.h"
+
 #include "refc_util.h"
 
 Value *tail(Value *input) {
@@ -6,18 +7,14 @@ Value *tail(Value *input) {
   tailStr->header.tag = STRING_TAG;
   Value_String *s = (Value_String *)input;
   int l = strlen(s->str);
-  if (l != 0) {
-    tailStr->str = malloc(l);
-    IDRIS2_REFC_VERIFY(tailStr->str, "malloc failed");
-    memset(tailStr->str, 0, l);
-    memcpy(tailStr->str, s->str + 1, l - 1);
-    return (Value *)tailStr;
-  } else {
-    tailStr->str = malloc(1);
-    IDRIS2_REFC_VERIFY(tailStr->str, "malloc failed");
-    tailStr->str[0] = '\0';
-    return (Value *)tailStr;
-  }
+  if (l == 0)
+    return (Value *)&idris2_predefined_nullstring;
+
+  tailStr->str = malloc(l);
+  IDRIS2_REFC_VERIFY(tailStr->str, "malloc failed");
+  memset(tailStr->str, 0, l);
+  memcpy(tailStr->str, s->str + 1, l - 1);
+  return (Value *)tailStr;
 }
 
 Value *reverse(Value *str) {
@@ -38,7 +35,7 @@ Value *reverse(Value *str) {
 
 Value *strIndex(Value *str, Value *i) {
   char *s = ((Value_String *)str)->str;
-  int idx = ((Value_Int64 *)i)->i64;
+  int idx = idris2_vp_to_Int64(i);
   return (Value *)idris2_mkChar(s[idx]);
 }
 
@@ -99,18 +96,19 @@ char *fastPack(Value *charList) {
 }
 
 Value *fastUnpack(char *str) {
-  if (str[0] == '\0')
-    return (Value *)NULL;
+  if (str[0] == '\0') {
+    return NULL;
+  }
 
-  Value_Constructor *retVal = (Value_Constructor *)newConstructor(2, 0);
-  retVal->args[0] = (Value *)idris2_mkChar(str[0]);
+  Value_Constructor *retVal = newConstructor(2, 1);
+  retVal->args[0] = idris2_mkChar(str[0]);
 
   int i = 1;
   Value_Constructor *current = (Value_Constructor *)retVal;
   Value_Constructor *next;
   while (str[i] != '\0') {
-    next = (Value_Constructor *)newConstructor(2, 0);
-    next->args[0] = (Value *)idris2_mkChar(str[i]);
+    next = newConstructor(2, 1);
+    next->args[0] = idris2_mkChar(str[i]);
     current->args[1] = (Value *)next;
 
     i++;
@@ -165,8 +163,8 @@ Value *stringIteratorNew(char *str) {
   memcpy(it->str, str, l + 1); // Take a copy of str, in case it gets GCed
 
   return (Value *)makeGCPointer(
-      it, (Value_Closure *)makeClosure((Value * (*)()) onCollectStringIterator,
-                                       2, 0));
+      it, (Value_Closure *)idris2_makeClosure(
+              (Value * (*)()) onCollectStringIterator, 2, 0));
 }
 
 Value *onCollectStringIterator(Value_Pointer *ptr, void *null) {
@@ -179,7 +177,8 @@ Value *onCollectStringIterator(Value_Pointer *ptr, void *null) {
 Value *stringIteratorToString(void *a, char *str, Value *it_p,
                               Value_Closure *f) {
   String_Iterator *it = ((Value_GCPointer *)it_p)->p->p;
-  return apply_closure((Value *)f, (Value *)idris2_mkString(it->str + it->pos));
+  return idris2_apply_closure(newReference((Value *)f),
+                              (Value *)idris2_mkString(it->str + it->pos));
 }
 
 Value *stringIteratorNext(char *s, Value *it_p) {
@@ -191,7 +190,7 @@ Value *stringIteratorNext(char *s, Value *it_p) {
 
   it->pos++; // Ok to do this as StringIterator linear
 
-  Value_Constructor *retVal = (Value_Constructor *)newConstructor(2, 0);
+  Value_Constructor *retVal = newConstructor(2, 1);
   retVal->args[0] = (Value *)idris2_mkChar(c);
   retVal->args[1] = newReference(it_p);
 
