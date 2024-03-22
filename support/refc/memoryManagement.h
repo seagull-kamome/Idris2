@@ -31,9 +31,9 @@ Value *idris2_mkDouble(double d);
 
 #elif UINTPTR_WIDTH >= 64
 #define idris2_mkBits32(x)                                                     \
-       : ((Value *)(((uintptr_t)(x) << idris2_vp_int_shift) + 1))
+  ((Value *)(((uintptr_t)(x) << idris2_vp_int_shift) + 1))
 #define idris2_mkInt32(x)                                                      \
-       : ((Value *)(((uintptr_t)(x) << idris2_vp_int_shift) + 1))
+  ((Value *)(((uintptr_t)(x) << idris2_vp_int_shift) + 1))
 
 #elif UINTPTR_WIDTH >= 32
 #define idris2_mkBits32(x) (idris2_mkBits32_Boxed(x))
@@ -47,7 +47,7 @@ Value *idris2_mkDouble(double d);
   ((Value *)(((uintptr_t)(x) << idris2_vp_int_shift) + 1))
 #define idris2_mkInt16(x)                                                      \
   ((Value *)(((uintptr_t)(x) << idris2_vp_int_shift) + 1))
-#define idris2_mkBool(x) (idris2_mkInt8(x))
+#define idris2_mkBool(x) (idris2_mkInt8((x) ? 1 : 0))
 
 Value *idris2_mkBits32_Boxed(uint32_t i);
 Value *idris2_mkBits64(uint64_t i);

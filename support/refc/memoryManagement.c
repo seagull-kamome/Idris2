@@ -34,7 +34,6 @@ void idris2_dumpMemoryStats(void) {
       idris2_memory_stat.n_immortalized, idris2_memory_stat.n_removeReference,
       idris2_memory_stat.n_tried_to_kill_immortals, idris2_memory_stat.n_freed);
 }
-
 #else
 #define IDRIS2_INC_MEMSTAT(x)
 // don't inline this, Because IDRIS2_MEMSTAT works only at compiling support
@@ -43,9 +42,14 @@ void idris2_dumpMemoryStats() {}
 #endif
 
 Value *newValue(size_t size) {
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L) /* C11 */
+  Value *retVal = (Value *)aligned_alloc(
+      sizeof(void *),
+      ((size + sizeof(void *) - 1) / sizeof(void *)) * sizeof(void *));
+#else
   Value *retVal = (Value *)malloc(size);
+#endif
   IDRIS2_REFC_VERIFY(retVal && !idris2_vp_is_unboxed(retVal), "malloc failed");
-  IDRIS2_INC_MEMSTAT(n_newValue);
   retVal->header.refCounter = 1;
   retVal->header.tag = NO_TAG;
   return retVal;
